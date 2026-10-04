@@ -1,35 +1,102 @@
 package com.pcremote.mobile
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Composable fun MediaDeck(){
- val s=rememberCoroutineScope();fun hit(k:String){s.launch(Dispatchers.IO){Api.post("/key",k)}}
- Column{
-  Title("Mídia","Controle sem voltar para o PC");Spacer(Modifier.height(14.dp))
-  Surface(color=Color(0xFF080D14),shape=RoundedCornerShape(30.dp),modifier=Modifier.fillMaxWidth()){
-   Column(Modifier.background(Brush.radialGradient(listOf(Color(0x22159BFF),Color.Transparent))).padding(vertical=26.dp),horizontalAlignment=Alignment.CenterHorizontally){
-    Text("NOW PLAYING",color=Color(0xFF5DE7FF),style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Black);Spacer(Modifier.height(22.dp))
-    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically){MediaKey("⏮",62){hit("MEDIA_PREV")};MediaKey("▶",88){hit("MEDIA_PLAY")};MediaKey("⏭",62){hit("MEDIA_NEXT")}}
-    Spacer(Modifier.height(28.dp));Text("VOLUME",color=Color(0xFF9299AE),style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold);Spacer(Modifier.height(10.dp))
-    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly){MediaKey("−",58){hit("VOLUME_DOWN")};MediaKey("×",58){hit("VOLUME_MUTE")};MediaKey("+",58){hit("VOLUME_UP")}}
-   }
-  }
- }
+@Composable
+fun MediaDeck() {
+    val scope = rememberCoroutineScope()
+    fun hit(key: String) { scope.launch(Dispatchers.IO) { Api.post("/key", key) } }
+
+    Column(Modifier.fillMaxSize()) {
+        Title("Mídia", "Controle reprodução e volume do Windows")
+        Spacer(Modifier.height(12.dp))
+
+        Surface(
+            color = NexusUi.Panel,
+            shape = RoundedCornerShape(26.dp),
+            border = BorderStroke(1.dp, NexusUi.Border),
+            modifier = Modifier.fillMaxWidth().weight(1f)
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.radialGradient(listOf(NexusUi.AccentStrong.copy(alpha = .12f), NexusUi.Panel))
+                )
+            ) {
+                Column(
+                    Modifier.fillMaxSize().padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            Modifier.size(72.dp).background(NexusUi.Accent.copy(alpha = .10f), RoundedCornerShape(22.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.MusicNote, null, tint = NexusUi.Accent, modifier = Modifier.size(34.dp))
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text("CONTROLE DE MÍDIA", color = NexusUi.Text, fontWeight = FontWeight.Black)
+                        Text("Comandos globais do Windows", color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        MediaKey(Icons.Default.SkipPrevious, 58) { hit("MEDIA_PREV") }
+                        MediaKey(Icons.Default.PlayArrow, 78, primary = true) { hit("MEDIA_PLAY") }
+                        MediaKey(Icons.Default.SkipNext, 58) { hit("MEDIA_NEXT") }
+                    }
+
+                    Surface(
+                        color = NexusUi.BackgroundSoft,
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, NexusUi.Border),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            MediaKey(Icons.Default.VolumeDown, 48) { hit("VOLUME_DOWN") }
+                            MediaKey(Icons.Default.VolumeOff, 48) { hit("VOLUME_MUTE") }
+                            MediaKey(Icons.Default.VolumeUp, 48) { hit("VOLUME_UP") }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
-@Composable private fun MediaKey(t:String,size:Int,on:()->Unit){Box(Modifier.size(size.dp).background(if(size>70)Color(0xFF159BFF) else Color(0xFF111A24),CircleShape).clickable{on()},contentAlignment=Alignment.Center){Text(t,if(size>70)Color.White else Color(0xFF5DE7FF),if(size>70)30.sp else 24.sp,fontWeight=FontWeight.Bold)}}
+
+@Composable
+private fun MediaKey(icon: ImageVector, size: Int, primary: Boolean = false, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(size.dp)
+            .background(if (primary) NexusUi.AccentStrong else NexusUi.PanelRaised, CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, null, tint = if (primary) androidx.compose.ui.graphics.Color.White else NexusUi.Accent, modifier = Modifier.size((size * .42f).dp))
+    }
+}
