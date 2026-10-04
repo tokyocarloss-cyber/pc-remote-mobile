@@ -35,16 +35,16 @@ private data class PadKey(val id:String,val label:String,val command:String,val 
  fun button(k:String,down:Boolean)=pad("{\"kind\":\"button\",\"button\":\""+k+"\",\"down\":"+down+"}")
  fun trigger(k:String,v:Float)=pad("{\"kind\":\"trigger\",\"trigger\":\""+k+"\",\"value\":"+v+"}")
  fun stick(k:String,x:Float,y:Float)=pad("{\"kind\":\"stick\",\"stick\":\""+k+"\",\"x\":"+x+",\"y\":"+(-y)+"}")
- Column(Modifier.fillMaxSize()){
+ Column(Modifier.fillMaxSize().background(Color(0xFF05080D))){
   Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
-   Box{TextButton(onClick={profileMenu=true}){Text("PERFIL: $profile")};DropdownMenu(profileMenu,{profileMenu=false}){listOf("Padrão","Corrida","Ação","Personalizado").forEach{n->DropdownMenuItem({Text(n)},{loadProfile(n);profileMenu=false})}}}
-   TextButton(onClick={edit=!edit}){Text(if(edit)"SALVAR" else "EDITAR")}
+   Box{TextButton(onClick={profileMenu=true}){Text("PERFIL  •  $profile",color=Color.White)};DropdownMenu(profileMenu,{profileMenu=false}){listOf("Padrão","Corrida","Ação","Personalizado").forEach{n->DropdownMenuItem({Text(n)},{loadProfile(n);profileMenu=false})}}}
+   Button(onClick={edit=!edit}){Text(if(edit)"SALVAR" else "EDITAR")}
   }
   if(edit){Text("Tamanho",color=Color.White);Slider(scale,{scale=it},valueRange=.65f..1.45f);Text("Opacidade",color=Color.White);Slider(alpha,{alpha=it},valueRange=.35f..1f);Text("Toque num botão para ocultar/mostrar pelo painel abaixo",color=Color(0xFF42D9FF));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)){defaults.take(6).forEach{k->FilterChip(selected=k.id !in hidden,onClick={hidden=if(k.id in hidden)hidden-k.id else hidden+k.id;prefs.edit().putBoolean(key(k.id,"visible"),k.id !in hidden).apply()},label={Text(k.label)})}}}
-  BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).background(Color(0x22000000))){
+  BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).background(Color(0xFF080D14))){
    val w=maxWidth;val h=maxHeight
    defaults.filter{it.id !in hidden}.forEach{k->val p=pos[k.id]?:Offset(k.x,k.y)
-    Box(Modifier.offset(w*p.x,h*p.y).size((54*scale).dp).background(Color(0xFF171D34).copy(alpha=alpha),CircleShape)
+    Box(Modifier.offset(w*p.x,h*p.y).size((54*scale).dp).background(Color(0xFF111A24).copy(alpha=alpha),CircleShape)
      .pointerInput(edit,k.id,profile){if(edit)detectDragGestures{ch,d->ch.consume();val cur=pos[k.id]?:p;val nx=(cur.x+d.x/constraints.maxWidth).coerceIn(0f,.9f);val ny=(cur.y+d.y/constraints.maxHeight).coerceIn(0f,.9f);pos=pos+(k.id to Offset(nx,ny));prefs.edit().putFloat(key(k.id,"x"),nx).putFloat(key(k.id,"y"),ny).apply()}}
      .pointerInput(edit,k.command){if(!edit)detectTapGestures(onPress={if(k.command=="LT"||k.command=="RT")trigger(k.command,1f) else button(k.command,true);tryAwaitRelease();if(k.command=="LT"||k.command=="RT")trigger(k.command,0f) else button(k.command,false)})},contentAlignment=Alignment.Center){Text(k.label,color=if(edit)Color(0xFF42D9FF) else Color.White)}
    }
@@ -56,7 +56,7 @@ private data class PadKey(val id:String,val label:String,val command:String,val 
       onDragCancel={knob=Offset.Zero;stick(side,0f,0f)}
      ){ch,d->ch.consume();val radius=constraints.maxWidth/2f;val n=knob+d;val len=n.getDistance();knob=if(len>radius)n*(radius/len) else n;stick(side,(knob.x/radius).coerceIn(-1f,1f),(knob.y/radius).coerceIn(-1f,1f))}},
      contentAlignment=Alignment.Center){
-      Box(Modifier.offset((knob.x/ctx.resources.displayMetrics.density).dp,(knob.y/ctx.resources.displayMetrics.density).dp).size((44*scale).dp).background(Color(0xFF42D9FF).copy(alpha=alpha),CircleShape))
+      Box(Modifier.offset((knob.x/ctx.resources.displayMetrics.density).dp,(knob.y/ctx.resources.displayMetrics.density).dp).size((44*scale).dp).background(Color(0xFF159BFF).copy(alpha=alpha),CircleShape))
      }
    }
   }
