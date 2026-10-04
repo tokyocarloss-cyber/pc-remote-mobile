@@ -34,6 +34,7 @@ private data class PadKey(val id:String,val label:String,val command:String,val 
  fun pad(json:String){if(!edit)scope.launch(Dispatchers.IO){Api.post("/gamepad",json)}}
  fun button(k:String,down:Boolean)=pad("{\"kind\":\"button\",\"button\":\""+k+"\",\"down\":"+down+"}")
  fun trigger(k:String,v:Float)=pad("{\"kind\":\"trigger\",\"trigger\":\""+k+"\",\"value\":"+v+"}")
+ fun stick(k:String,x:Float,y:Float)=pad("{\"kind\":\"stick\",\"stick\":\""+k+"\",\"x\":"+x+",\"y\":"+(-y)+"}")
  Column(Modifier.fillMaxSize()){
   Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
    Box{TextButton(onClick={profileMenu=true}){Text("PERFIL: $profile")};DropdownMenu(profileMenu,{profileMenu=false}){listOf("Padrão","Corrida","Ação","Personalizado").forEach{n->DropdownMenuItem({Text(n)},{loadProfile(n);profileMenu=false})}}}
@@ -46,6 +47,17 @@ private data class PadKey(val id:String,val label:String,val command:String,val 
     Box(Modifier.offset(w*p.x,h*p.y).size((54*scale).dp).background(Color(0xFF171D34).copy(alpha=alpha),CircleShape)
      .pointerInput(edit,k.id,profile){if(edit)detectDragGestures{ch,d->ch.consume();val cur=pos[k.id]?:p;val nx=(cur.x+d.x/constraints.maxWidth).coerceIn(0f,.9f);val ny=(cur.y+d.y/constraints.maxHeight).coerceIn(0f,.9f);pos=pos+(k.id to Offset(nx,ny));prefs.edit().putFloat(key(k.id,"x"),nx).putFloat(key(k.id,"y"),ny).apply()}}
      .pointerInput(edit,k.command){if(!edit)detectTapGestures(onPress={if(k.command=="LT"||k.command=="RT")trigger(k.command,1f) else button(k.command,true);tryAwaitRelease();if(k.command=="LT"||k.command=="RT")trigger(k.command,0f) else button(k.command,false)})},contentAlignment=Alignment.Center){Text(k.label,color=if(edit)Color(0xFF42D9FF) else Color.White)}
+   }
+   listOf("left" to Offset(.18f,.68f),"right" to Offset(.68f,.68f)).forEach{(side,base)->
+    var knob by remember(side){mutableStateOf(Offset.Zero)}
+    Box(Modifier.offset(w*base.x,h*base.y).size((96*scale).dp).background(Color(0x55171D34),CircleShape)
+     .pointerInput(edit,side){if(!edit)detectDragGestures(
+      onDragEnd={knob=Offset.Zero;stick(side,0f,0f)},
+      onDragCancel={knob=Offset.Zero;stick(side,0f,0f)}
+     ){ch,d->ch.consume();val radius=constraints.maxWidth/2f;val n=knob+d;val len=n.getDistance();knob=if(len>radius)n*(radius/len) else n;stick(side,(knob.x/radius).coerceIn(-1f,1f),(knob.y/radius).coerceIn(-1f,1f))}},
+     contentAlignment=Alignment.Center){
+      Box(Modifier.offset((knob.x/ctx.resources.displayMetrics.density).dp,(knob.y/ctx.resources.displayMetrics.density).dp).size((44*scale).dp).background(Color(0xFF42D9FF).copy(alpha=alpha),CircleShape))
+     }
    }
   }
   if(edit)Button(onClick={prefs.edit().apply{defaults.forEach{remove(key(it.id,"x"));remove(key(it.id,"y"))};remove("$profile:scale");remove("$profile:alpha")}.apply();scale=1f;alpha=.88f;pos=defaults.associate{it.id to Offset(it.x,it.y)}},Modifier.fillMaxWidth()){Text("RESTAURAR ESTE PERFIL")}
