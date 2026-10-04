@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, full-redesign ]
   workflow_dispatch:
 
 jobs:
@@ -22,5 +22,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: pc-remote-mobile-debug
+          name: pc-remote-mobile-${{ github.ref_name }}
           path: app/build/outputs/apk/debug/app-debug.apk
