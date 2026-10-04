@@ -1,38 +1,38 @@
 package com.pcremote.mobile
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+private data class PadKey(val id:String,val label:String,val command:String,val x:Float,val y:Float)
+
 @Composable fun AdvancedGamepad(){
- val scope=rememberCoroutineScope();fun send(k:String){scope.launch(Dispatchers.IO){Api.post("/key",k)}}
- Column(Modifier.fillMaxSize()){
-  Title("Controle","Layout móvel completo")
-  Spacer(Modifier.height(10.dp))
-  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Shoulder("LT"){send("LT")};Shoulder("RT"){send("RT")}}
-  Spacer(Modifier.height(6.dp))
-  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Shoulder("LB"){send("LB")};Shoulder("RB"){send("RB")}}
-  Spacer(Modifier.height(14.dp))
-  Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){
-   Column(horizontalAlignment=Alignment.CenterHorizontally){Key("↑"){send("UP")};Row{Key("←"){send("LEFT")};Spacer(Modifier.width(42.dp));Key("→"){send("RIGHT")}};Key("↓"){send("DOWN")}}
-   Column(horizontalAlignment=Alignment.CenterHorizontally){Row{Face("Y"){send("Y")};Face("B"){send("B")}};Row{Face("X"){send("X")};Face("A"){send("A")}}}
+ val ctx=LocalContext.current;val prefs=remember{ctx.getSharedPreferences("pad_layout",Context.MODE_PRIVATE)}
+ val scope=rememberCoroutineScope();var edit by remember{mutableStateOf(false)};var scale by remember{mutableFloatStateOf(prefs.getFloat("scale",1f))};var alpha by remember{mutableFloatStateOf(prefs.getFloat("alpha",.88f))}
+ val defaults=remember{listOf(PadKey("lt","LT","LT",.08f,.10f),PadKey("rt","RT","RT",.78f,.10f),PadKey("lb","LB","LB",.08f,.23f),PadKey("rb","RB","RB",.78f,.23f),PadKey("up","↑","UP",.16f,.43f),PadKey("left","←","LEFT",.05f,.57f),PadKey("right","→","RIGHT",.27f,.57f),PadKey("down","↓","DOWN",.16f,.71f),PadKey("y","Y","Y",.76f,.43f),PadKey("b","B","B",.87f,.57f),PadKey("x","X","X",.65f,.57f),PadKey("a","A","A",.76f,.71f),PadKey("l3","L3","L3",.18f,.84f),PadKey("select","SELECT","SELECT",.37f,.86f),PadKey("start","START","START",.55f,.86f),PadKey("r3","R3","R3",.78f,.84f))}
+ var pos by remember{mutableStateOf(defaults.associate{it.id to Offset(prefs.getFloat(it.id+"_x",it.x),prefs.getFloat(it.id+"_y",it.y))})}
+ fun send(k:String){if(!edit)scope.launch(Dispatchers.IO){Api.post("/key",k)}}
+ Column(Modifier.fillMaxSize()){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Title("Controle",if(edit)"Editor de layout" else "Layout personalizado");TextButton(onClick={edit=!edit}){Text(if(edit)"SALVAR" else "EDITAR")}}
+  if(edit){Text("Tamanho",color=Color.White);Slider(scale,{scale=it},valueRange=.65f..1.45f);Text("Opacidade",color=Color.White);Slider(alpha,{alpha=it},valueRange=.35f..1f)}
+  BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).background(Color(0x22000000))){
+   val w=maxWidth;val h=maxHeight
+   defaults.forEach{k->val p=pos[k.id]?:Offset(k.x,k.y);Box(Modifier.offset(w*p.x,h*p.y).size((54*scale).dp).background(Color(0xFF171D34).copy(alpha=alpha),CircleShape).pointerInput(edit,k.id){if(edit)detectDragGestures{ch,d->ch.consume();val nx=(p.x+d.x/constraints.maxWidth).coerceIn(0f,.9f);val ny=(p.y+d.y/constraints.maxHeight).coerceIn(0f,.9f);pos=pos+(k.id to Offset(nx,ny));prefs.edit().putFloat(k.id+"_x",nx).putFloat(k.id+"_y",ny).apply()}}.clickable{send(k.command)},contentAlignment=Alignment.Center){Text(k.label,color=if(edit)Color(0xFF42D9FF) else Color.White)}}
   }
-  Spacer(Modifier.height(16.dp))
-  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly){Stick("L3"){send("L3")};Shoulder("SELECT"){send("SELECT")};Shoulder("START"){send("START")};Stick("R3"){send("R3")}}
+  if(edit)Button(onClick={prefs.edit().clear().apply();pos=defaults.associate{it.id to Offset(it.x,it.y)};scale=1f;alpha=.88f},Modifier.fillMaxWidth()){Text("RESTAURAR PADRÃO")}
  }
+ LaunchedEffect(scale,alpha){prefs.edit().putFloat("scale",scale).putFloat("alpha",alpha).apply()}
 }
-@Composable private fun Shoulder(t:String,on:()->Unit){Box(Modifier.width(76.dp).height(42.dp).background(Color(0xFF171D34),RoundedCornerShape(16.dp)).clickable{on()},contentAlignment=Alignment.Center){Text(t,color=Color.White)}}
-@Composable private fun Key(t:String,on:()->Unit){Box(Modifier.size(50.dp).background(Color(0xFF171D34),RoundedCornerShape(12.dp)).clickable{on()},contentAlignment=Alignment.Center){Text(t,color=Color.White)}}
-@Composable private fun Face(t:String,on:()->Unit){Box(Modifier.padding(5.dp).size(58.dp).background(Color(0xFF171D34),CircleShape).clickable{on()},contentAlignment=Alignment.Center){Text(t,color=Color(0xFF8D5CFF))}}
-@Composable private fun Stick(t:String,on:()->Unit){Box(Modifier.size(48.dp).background(Color(0xFF222A46),CircleShape).clickable{on()},contentAlignment=Alignment.Center){Text(t,color=Color(0xFF42D9FF))}}
