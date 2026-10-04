@@ -74,7 +74,10 @@ def local_ip():
 class H(BaseHTTPRequestHandler):
  def sendb(self,b=b'OK',typ='text/plain',code=200):
   self.send_response(code);self.send_header('Access-Control-Allow-Origin','*');self.send_header('Content-Type',typ);self.send_header('Content-Length',str(len(b)));self.end_headers();self.wfile.write(b)
- def body(self):return self.rfile.read(min(int(self.headers.get('Content-Length','0')),256*1024*1024))
+ def body(self):
+  n=int(self.headers.get('Content-Length','0'))
+  if n>256*1024*1024:raise ValueError('Arquivo maior que o limite de 256 MB')
+  return self.rfile.read(n)
  def do_GET(self):
   if self.path=='/ping':return self.sendb(b'PC Remote')
   if self.path=='/screen.jpg':
