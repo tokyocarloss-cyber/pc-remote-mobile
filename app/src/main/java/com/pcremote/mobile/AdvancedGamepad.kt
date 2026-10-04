@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
@@ -30,7 +31,9 @@ private data class PadKey(val id:String,val label:String,val command:String,val 
  var pos by remember{mutableStateOf(loadPos())}
  fun loadProfile(n:String){profile=n;prefs.edit().putString("profile",n).apply();scale=prefs.getFloat("$n:scale",1f);alpha=prefs.getFloat("$n:alpha",.88f);pos=defaults.associate{it.id to Offset(prefs.getFloat("$n:${it.id}:x",it.x),prefs.getFloat("$n:${it.id}:y",it.y))}}
  LaunchedEffect(Unit){loadProfile(profile)}
- fun send(k:String){if(!edit)scope.launch(Dispatchers.IO){Api.post("/key",k)}}
+ fun pad(json:String){if(!edit)scope.launch(Dispatchers.IO){Api.post("/gamepad",json)}}
+ fun button(k:String,down:Boolean)=pad("{\"kind\":\"button\",\"button\":\""+k+"\",\"down\":"+down+"}")
+ fun trigger(k:String,v:Float)=pad("{\"kind\":\"trigger\",\"trigger\":\""+k+"\",\"value\":"+v+"}")
  Column(Modifier.fillMaxSize()){
   Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
    Box{TextButton(onClick={profileMenu=true}){Text("PERFIL: $profile")};DropdownMenu(profileMenu,{profileMenu=false}){listOf("Padrão","Corrida","Ação","Personalizado").forEach{n->DropdownMenuItem({Text(n)},{loadProfile(n);profileMenu=false})}}}
@@ -42,7 +45,7 @@ private data class PadKey(val id:String,val label:String,val command:String,val 
    defaults.forEach{k->val p=pos[k.id]?:Offset(k.x,k.y)
     Box(Modifier.offset(w*p.x,h*p.y).size((54*scale).dp).background(Color(0xFF171D34).copy(alpha=alpha),CircleShape)
      .pointerInput(edit,k.id,profile){if(edit)detectDragGestures{ch,d->ch.consume();val cur=pos[k.id]?:p;val nx=(cur.x+d.x/constraints.maxWidth).coerceIn(0f,.9f);val ny=(cur.y+d.y/constraints.maxHeight).coerceIn(0f,.9f);pos=pos+(k.id to Offset(nx,ny));prefs.edit().putFloat(key(k.id,"x"),nx).putFloat(key(k.id,"y"),ny).apply()}}
-     .clickable{send(k.command)},contentAlignment=Alignment.Center){Text(k.label,color=if(edit)Color(0xFF42D9FF) else Color.White)}
+     .pointerInput(edit,k.command){if(!edit)detectTapGestures(onPress={if(k.command=="LT"||k.command=="RT")trigger(k.command,1f) else button(k.command,true);tryAwaitRelease();if(k.command=="LT"||k.command=="RT")trigger(k.command,0f) else button(k.command,false)})},contentAlignment=Alignment.Center){Text(k.label,color=if(edit)Color(0xFF42D9FF) else Color.White)}
    }
   }
   if(edit)Button(onClick={prefs.edit().apply{defaults.forEach{remove(key(it.id,"x"));remove(key(it.id,"y"))};remove("$profile:scale");remove("$profile:alpha")}.apply();scale=1f;alpha=.88f;pos=defaults.associate{it.id to Offset(it.x,it.y)}},Modifier.fillMaxWidth()){Text("RESTAURAR ESTE PERFIL")}
