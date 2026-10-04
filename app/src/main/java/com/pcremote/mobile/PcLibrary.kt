@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,7 +28,7 @@ import org.json.JSONArray
   Title("Biblioteca","Abra qualquer app ou jogo do seu Windows")
   Spacer(Modifier.height(12.dp))
   OutlinedTextField(search,{search=it},Modifier.fillMaxWidth(),singleLine=true,placeholder={Text("Buscar no PC…")},leadingIcon={Text("⌕",color=Color(0xFF5DE7FF))},shape=RoundedCornerShape(20.dp))
-  Spacer(Modifier.height(10.dp));Text(filtered.size.toString()+" ITENS",color=Color(0xFF8F98B5),style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold);Spacer(Modifier.height(5.dp))
+  Spacer(Modifier.height(10.dp));Text("ACESSO RÁPIDO",color=Color(0xFF8F98B5),style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold);Spacer(Modifier.height(6.dp));LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){items(filtered.take(6)){name->Surface(color=Color(0xFF101824),shape=RoundedCornerShape(18.dp),modifier=Modifier.size(76.dp).clickable{scope.launch(Dispatchers.IO){Api.post("/launch",name)}}){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Box(Modifier.size(38.dp).background(Color(0x22159BFF),CircleShape),contentAlignment=Alignment.Center){Text(name.take(1).uppercase(),color=Color(0xFF5DE7FF),fontWeight=FontWeight.Black)};Spacer(Modifier.height(4.dp));Text(name.take(9),color=Color.White,style=MaterialTheme.typography.labelSmall,maxLines=1)}}}};Spacer(Modifier.height(10.dp));Text(filtered.size.toString()+" ITENS",color=Color(0xFF8F98B5),style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold);Spacer(Modifier.height(5.dp))
   if(apps.isEmpty())Box(Modifier.fillMaxWidth().weight(1f),contentAlignment=Alignment.Center){Text(if(Api.connected)"Carregando biblioteca…" else "Conecte ao PC para carregar",color=Color(0xFF8F98B5))}
   else LazyColumn(verticalArrangement=Arrangement.spacedBy(7.dp)){items(filtered){name->
    Surface(color=Color(0xB8171D34),shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth().clickable{scope.launch(Dispatchers.IO){Api.post("/launch",name)}}){
