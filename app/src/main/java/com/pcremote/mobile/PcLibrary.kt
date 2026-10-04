@@ -18,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -101,8 +100,11 @@ fun PcLibrary() {
         Spacer(Modifier.height(6.dp))
 
         when {
-            apps.isEmpty() -> EmptyLibrary(if (Api.connected) "Carregando biblioteca…" else "Conecte ao PC para carregar")
-            filtered.isEmpty() -> EmptyLibrary("Nenhum item encontrado")
+            apps.isEmpty() -> EmptyLibrary(
+                if (Api.connected) "Carregando biblioteca…" else "Conecte ao PC para carregar",
+                Modifier.weight(1f)
+            )
+            filtered.isEmpty() -> EmptyLibrary("Nenhum item encontrado", Modifier.weight(1f))
             else -> LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(7.dp),
@@ -206,8 +208,8 @@ private fun AppRow(app: PcApp, onClick: () -> Unit) {
 }
 
 @Composable
-private fun EmptyLibrary(message: String) {
-    Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+private fun EmptyLibrary(message: String, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Text(message, color = NexusUi.Muted)
     }
 }
