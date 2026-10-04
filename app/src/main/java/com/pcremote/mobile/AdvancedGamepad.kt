@@ -28,8 +28,8 @@ private data class PadKey(val id:String,val label:String,val command:String,val 
  val defaults=remember{listOf(PadKey("lt","LT","LT",.08f,.10f),PadKey("rt","RT","RT",.78f,.10f),PadKey("lb","LB","LB",.08f,.23f),PadKey("rb","RB","RB",.78f,.23f),PadKey("up","↑","UP",.16f,.43f),PadKey("left","←","LEFT",.05f,.57f),PadKey("right","→","RIGHT",.27f,.57f),PadKey("down","↓","DOWN",.16f,.71f),PadKey("y","Y","Y",.76f,.43f),PadKey("b","B","B",.87f,.57f),PadKey("x","X","X",.65f,.57f),PadKey("a","A","A",.76f,.71f),PadKey("l3","L3","L3",.18f,.84f),PadKey("select","SELECT","SELECT",.37f,.86f),PadKey("start","START","START",.55f,.86f),PadKey("r3","R3","R3",.78f,.84f))}
  fun key(id:String,suffix:String)="$profile:$id:$suffix"
  fun loadPos()=defaults.associate{it.id to Offset(prefs.getFloat(key(it.id,"x"),it.x),prefs.getFloat(key(it.id,"y"),it.y))}
- var pos by remember{mutableStateOf(loadPos())}
- fun loadProfile(n:String){profile=n;prefs.edit().putString("profile",n).apply();scale=prefs.getFloat("$n:scale",1f);alpha=prefs.getFloat("$n:alpha",.88f);pos=defaults.associate{it.id to Offset(prefs.getFloat("$n:${it.id}:x",it.x),prefs.getFloat("$n:${it.id}:y",it.y))}}
+ var pos by remember{mutableStateOf(loadPos())};var hidden by remember{mutableStateOf(emptySet<String>())}
+ fun loadProfile(n:String){profile=n;prefs.edit().putString("profile",n).apply();scale=prefs.getFloat("$n:scale",1f);alpha=prefs.getFloat("$n:alpha",.88f);pos=defaults.associate{it.id to Offset(prefs.getFloat("$n:${it.id}:x",it.x),prefs.getFloat("$n:${it.id}:y",it.y))};hidden=defaults.filter{!prefs.getBoolean("$n:${it.id}:visible",true)}.map{it.id}.toSet()}
  LaunchedEffect(Unit){loadProfile(profile)}
  fun pad(json:String){if(!edit)scope.launch(Dispatchers.IO){Api.post("/gamepad",json)}}
  fun button(k:String,down:Boolean)=pad("{\"kind\":\"button\",\"button\":\""+k+"\",\"down\":"+down+"}")
@@ -40,10 +40,10 @@ private data class PadKey(val id:String,val label:String,val command:String,val 
    Box{TextButton(onClick={profileMenu=true}){Text("PERFIL: $profile")};DropdownMenu(profileMenu,{profileMenu=false}){listOf("Padrão","Corrida","Ação","Personalizado").forEach{n->DropdownMenuItem({Text(n)},{loadProfile(n);profileMenu=false})}}}
    TextButton(onClick={edit=!edit}){Text(if(edit)"SALVAR" else "EDITAR")}
   }
-  if(edit){Text("Tamanho",color=Color.White);Slider(scale,{scale=it},valueRange=.65f..1.45f);Text("Opacidade",color=Color.White);Slider(alpha,{alpha=it},valueRange=.35f..1f)}
+  if(edit){Text("Tamanho",color=Color.White);Slider(scale,{scale=it},valueRange=.65f..1.45f);Text("Opacidade",color=Color.White);Slider(alpha,{alpha=it},valueRange=.35f..1f);Text("Toque num botão para ocultar/mostrar pelo painel abaixo",color=Color(0xFF42D9FF));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)){defaults.take(6).forEach{k->FilterChip(selected=k.id !in hidden,onClick={hidden=if(k.id in hidden)hidden-k.id else hidden+k.id;prefs.edit().putBoolean(key(k.id,"visible"),k.id !in hidden).apply()},label={Text(k.label)})}}}
   BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).background(Color(0x22000000))){
    val w=maxWidth;val h=maxHeight
-   defaults.forEach{k->val p=pos[k.id]?:Offset(k.x,k.y)
+   defaults.filter{it.id !in hidden}.forEach{k->val p=pos[k.id]?:Offset(k.x,k.y)
     Box(Modifier.offset(w*p.x,h*p.y).size((54*scale).dp).background(Color(0xFF171D34).copy(alpha=alpha),CircleShape)
      .pointerInput(edit,k.id,profile){if(edit)detectDragGestures{ch,d->ch.consume();val cur=pos[k.id]?:p;val nx=(cur.x+d.x/constraints.maxWidth).coerceIn(0f,.9f);val ny=(cur.y+d.y/constraints.maxHeight).coerceIn(0f,.9f);pos=pos+(k.id to Offset(nx,ny));prefs.edit().putFloat(key(k.id,"x"),nx).putFloat(key(k.id,"y"),ny).apply()}}
      .pointerInput(edit,k.command){if(!edit)detectTapGestures(onPress={if(k.command=="LT"||k.command=="RT")trigger(k.command,1f) else button(k.command,true);tryAwaitRelease();if(k.command=="LT"||k.command=="RT")trigger(k.command,0f) else button(k.command,false)})},contentAlignment=Alignment.Center){Text(k.label,color=if(edit)Color(0xFF42D9FF) else Color.White)}
