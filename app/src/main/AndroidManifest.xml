@@ -13,5 +13,8 @@
   <service android:name=".EdgeDropService" android:exported="false" android:foregroundServiceType="specialUse">
    <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="PC Drop overlay used only while the user enables drag-to-PC"/>
   </service>
+  <service android:name=".PhoneInboxService" android:exported="false" android:foregroundServiceType="specialUse">
+   <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Receives files explicitly sent by the paired PC while PC Drop is enabled"/>
+  </service>
  </application>
 </manifest>
