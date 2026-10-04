@@ -1,7 +1,9 @@
 package com.pcremote.mobile
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,8 +27,13 @@ import java.net.URLEncoder
 
 @Composable fun PcDrop(){
  val ctx=LocalContext.current;val scope=rememberCoroutineScope();var text by remember{mutableStateOf("")};var status by remember{mutableStateOf("Pronto para enviar")};var edgeOn by remember{mutableStateOf(false)}
+ val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted->status=if(granted)"Notificações autorizadas • ative o Drop Edge" else "Drop Edge funciona, mas notificações podem ficar ocultas"}
  val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri:Uri?->if(uri!=null){scope.launch(Dispatchers.IO){status="Enviando…";try{val bytes=ctx.contentResolver.openInputStream(uri)?.use{it.readBytes()}?:byteArrayOf();val name=uri.lastPathSegment?.substringAfterLast('/')?:"arquivo";val ok=RemoteClient.post("/upload/"+URLEncoder.encode(name,"UTF-8"),bytes);status=if(ok)"✓ Arquivo enviado" else "Falha no envio"}catch(_:Exception){status="Falha no envio"}}}}
- fun enable(){if(!Settings.canDrawOverlays(ctx)){ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+ctx.packageName)));status="Autorize sobreposição e toque novamente"}else{ctx.startForegroundService(Intent(ctx,EdgeDropService::class.java));ctx.startForegroundService(Intent(ctx,PhoneInboxService::class.java));edgeOn=true;status="✓ Drop Edge ativo"}}
+ fun enable(){
+  if(Build.VERSION.SDK_INT>=33&&ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+  if(!Settings.canDrawOverlays(ctx)){ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+ctx.packageName)));status="Autorize sobreposição e toque novamente"}
+  else{ctx.startForegroundService(Intent(ctx,EdgeDropService::class.java));ctx.startForegroundService(Intent(ctx,PhoneInboxService::class.java));edgeOn=true;status="✓ Drop Edge ativo"}
+ }
  fun disable(){ctx.stopService(Intent(ctx,EdgeDropService::class.java));ctx.stopService(Intent(ctx,PhoneInboxService::class.java));edgeOn=false;status="Drop Edge desativado"}
  Column{
   Title("NEXUS Drop","Celular ↔ Windows sem cabo");Spacer(Modifier.height(12.dp))
