@@ -36,3 +36,5 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+// Responsive UI rebuild validated through CI.
