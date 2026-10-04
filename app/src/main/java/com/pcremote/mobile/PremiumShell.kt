@@ -25,7 +25,7 @@ private val Glass = Color(0xCC12182C)
 private val Neon = Color(0xFF42D9FF)
 private val Purple = Color(0xFF8B63FF)
 
-@Composable fun PremiumShell(page:Int,setPage:(Int)->Unit,content:@Composable()->Unit){
+@Composable fun PremiumShell(page:Int,setPage:(Int)->Unit,content:@Composable () -> Unit){
  val landscape=LocalConfiguration.current.orientation==Configuration.ORIENTATION_LANDSCAPE
  Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF18234B),Deep)))){
   if(landscape) Row(Modifier.fillMaxSize().padding(14.dp)){SideRail(page,setPage);Spacer(Modifier.width(14.dp));Surface(color=Glass,shape=RoundedCornerShape(30.dp),modifier=Modifier.weight(1f).fillMaxHeight()){Box(Modifier.padding(20.dp)){content()}}}
