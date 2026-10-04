@@ -6,7 +6,32 @@ PORT=8765
 ROOT=Path.home()/"Downloads"/"PC Remote"; ROOT.mkdir(parents=True,exist_ok=True)
 OUTBOX=ROOT/"To Phone"; OUTBOX.mkdir(parents=True,exist_ok=True)
 u=ctypes.windll.user32
+try:
+ import vgamepad as vg
+ GAMEPAD=vg.VX360Gamepad()
+except Exception:
+ GAMEPAD=None
+PAD_BUTTONS={}
+if GAMEPAD:
+ PAD_BUTTONS={'A':vg.XUSB_BUTTON.XUSB_GAMEPAD_A,'B':vg.XUSB_BUTTON.XUSB_GAMEPAD_B,'X':vg.XUSB_BUTTON.XUSB_GAMEPAD_X,'Y':vg.XUSB_BUTTON.XUSB_GAMEPAD_Y,'LB':vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER,'RB':vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER,'UP':vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP,'DOWN':vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN,'LEFT':vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT,'RIGHT':vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT,'START':vg.XUSB_BUTTON.XUSB_GAMEPAD_START,'SELECT':vg.XUSB_BUTTON.XUSB_GAMEPAD_BACK,'L3':vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB,'R3':vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB}
+
 KEYS={'A':0x41,'B':0x42,'X':0x58,'Y':0x59,'ENTER':0x0D,'ESC':0x1B,'SPACE':0x20,'UP':0x26,'DOWN':0x28,'LEFT':0x25,'RIGHT':0x27,'VOLUME_UP':0xAF,'VOLUME_DOWN':0xAE,'VOLUME_MUTE':0xAD,'MEDIA_PLAY':0xB3,'MEDIA_NEXT':0xB0,'MEDIA_PREV':0xB1,'LB':0x51,'RB':0x45,'LT':0x31,'RT':0x33,'L3':0x10,'R3':0x11,'START':0x0D,'SELECT':0x1B}
+
+def gamepad_event(raw):
+ if not GAMEPAD:return False
+ d=json.loads(raw.decode());kind=d.get('kind')
+ if kind=='button':
+  b=PAD_BUTTONS.get(d.get('button'))
+  if b:(GAMEPAD.press_button if d.get('down') else GAMEPAD.release_button)(button=b)
+ elif kind=='stick':
+  x=max(-1.0,min(1.0,float(d.get('x',0))));y=max(-1.0,min(1.0,float(d.get('y',0))))
+  if d.get('stick')=='left':GAMEPAD.left_joystick_float(x_value_float=x,y_value_float=y)
+  else:GAMEPAD.right_joystick_float(x_value_float=x,y_value_float=y)
+ elif kind=='trigger':
+  v=max(0.0,min(1.0,float(d.get('value',0))))
+  if d.get('trigger')=='LT':GAMEPAD.left_trigger_float(value_float=v)
+  else:GAMEPAD.right_trigger_float(value_float=v)
+ GAMEPAD.update();return True
 
 def press(vk):
  if vk:u.keybd_event(vk,0,0,0);u.keybd_event(vk,0,2,0)
@@ -68,7 +93,9 @@ class H(BaseHTTPRequestHandler):
  def do_POST(self):
   raw=self.body()
   try:
-   if self.path=='/key':press(KEYS.get(raw.decode().strip(),0))
+   if self.path=='/gamepad':
+    if not gamepad_event(raw):return self.sendb(b'Virtual gamepad unavailable',code=503)
+   elif self.path=='/key':press(KEYS.get(raw.decode().strip(),0))
    elif self.path=='/text':paste_text(raw.decode())
    elif self.path=='/clipboard':set_clipboard(raw.decode())
    elif self.path=='/launch':launch(raw.decode().strip())
