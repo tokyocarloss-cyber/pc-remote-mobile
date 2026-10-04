@@ -1,7 +1,6 @@
 package com.pcremote.mobile
 
 import android.content.res.Configuration
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,13 +26,13 @@ private val Purple = Color(0xFF765BFF)
 
 @Composable fun PremiumShell(page:Int,setPage:(Int)->Unit,content:@Composable () -> Unit){
  val landscape=LocalConfiguration.current.orientation==Configuration.ORIENTATION_LANDSCAPE
- Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF17213D),Color(0xFF080B13),Deep)))){
+ Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF121C31),Color(0xFF080B13),Deep)))){
   if(landscape) Row(Modifier.fillMaxSize().padding(14.dp)){SideRail(page,setPage);Spacer(Modifier.width(14.dp));Surface(color=Glass,shape=RoundedCornerShape(34.dp),modifier=Modifier.weight(1f).fillMaxHeight()){Box(Modifier.padding(20.dp)){content()}}}
-  else Column(Modifier.fillMaxSize().padding(14.dp)){PremiumStatus();Spacer(Modifier.height(12.dp));Surface(color=Glass,shape=RoundedCornerShape(34.dp),modifier=Modifier.weight(1f).fillMaxWidth()){Box(Modifier.padding(18.dp)){content()}};Spacer(Modifier.height(10.dp));BottomDock(page,setPage)}
+  else Column(Modifier.fillMaxSize().padding(14.dp)){PremiumStatus{setPage(8)};Spacer(Modifier.height(12.dp));Surface(color=Glass,shape=RoundedCornerShape(34.dp),modifier=Modifier.weight(1f).fillMaxWidth()){Box(Modifier.padding(18.dp)){content()}};Spacer(Modifier.height(10.dp));BottomDock(page,setPage)}
  }
 }
-@Composable fun PremiumStatus(){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Column{Text("NEXUS",Color.White,24.sp,fontWeight=FontWeight.Black);Text(if(Api.connected)"● ${Api.host} ONLINE" else "● PROCURANDO SEU PC",if(Api.connected)Color(0xFF62F29A) else Neon,10.sp,fontWeight=FontWeight.Bold)};Box(Modifier.size(42.dp).background(Brush.linearGradient(listOf(Neon,Purple)),CircleShape),contentAlignment=Alignment.Center){Text("N",Color.White,15.sp,fontWeight=FontWeight.Black)}}}
+@Composable fun PremiumStatus(settings:()->Unit){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Column{Text("NEXUS",Color.White,24.sp,fontWeight=FontWeight.Black);Text(if(Api.connected)"● ${Api.host} ONLINE" else "● PROCURANDO SEU PC",if(Api.connected)Color(0xFF62F29A) else Neon,10.sp,fontWeight=FontWeight.Bold)};Box(Modifier.size(42.dp).background(Color(0xFF101722),CircleShape).clickable{settings()},contentAlignment=Alignment.Center){Text("⚙",Neon,18.sp)}}}
 private val nav=listOf("⌂" to "Início","▦" to "Apps","⌁" to "Mouse","🎮" to "Controle","⇄" to "Drop","▣" to "Tela","⌨" to "Texto","♫" to "Mídia")
 @Composable fun BottomDock(sel:Int,set:(Int)->Unit){Surface(color=Color(0xF00D1220),shape=RoundedCornerShape(28.dp),tonalElevation=8.dp){Row(Modifier.fillMaxWidth().padding(4.dp),horizontalArrangement=Arrangement.SpaceEvenly){nav.forEachIndexed{i,n->DockItem(n.first,n.second,i==sel){set(i)}}}}}
-@Composable fun SideRail(sel:Int,set:(Int)->Unit){Surface(color=Glass,shape=RoundedCornerShape(28.dp),modifier=Modifier.width(82.dp).fillMaxHeight()){Column(Modifier.padding(vertical=12.dp),horizontalAlignment=Alignment.CenterHorizontally){Box(Modifier.size(48.dp).background(Brush.linearGradient(listOf(Neon,Purple)),CircleShape),contentAlignment=Alignment.Center){Text("PC",Color.White,fontWeight=FontWeight.Black)};Spacer(Modifier.weight(1f));nav.forEachIndexed{i,n->DockItem(n.first,n.second,i==sel){set(i)}};Spacer(Modifier.weight(1f))}}}
+@Composable fun SideRail(sel:Int,set:(Int)->Unit){Surface(color=Glass,shape=RoundedCornerShape(28.dp),modifier=Modifier.width(82.dp).fillMaxHeight()){Column(Modifier.padding(vertical=12.dp),horizontalAlignment=Alignment.CenterHorizontally){Box(Modifier.size(48.dp).background(Brush.linearGradient(listOf(Neon,Purple)),CircleShape),contentAlignment=Alignment.Center){Text("N",Color.White,fontWeight=FontWeight.Black)};Spacer(Modifier.weight(1f));nav.forEachIndexed{i,n->DockItem(n.first,n.second,i==sel){set(i)}};Spacer(Modifier.weight(1f));DockItem("⚙","Config",sel==8){set(8)}}}}
 @Composable private fun DockItem(icon:String,label:String,active:Boolean,on:()->Unit){val s by animateFloatAsState(if(active)1.08f else .94f,label="dock");Column(Modifier.width(58.dp).scale(s).clickable{on()}.padding(vertical=7.dp),horizontalAlignment=Alignment.CenterHorizontally){Box(Modifier.size(38.dp).background(if(active)Brush.linearGradient(listOf(Neon.copy(.28f),Purple.copy(.22f))) else Brush.linearGradient(listOf(Color.Transparent,Color.Transparent)),CircleShape),contentAlignment=Alignment.Center){Text(icon,if(active)Neon else Color(0xFF8F98B5),18.sp)};Text(label,if(active)Color.White else Color(0xFF8F98B5),8.sp,fontWeight=if(active)FontWeight.Bold else FontWeight.Normal)}}
