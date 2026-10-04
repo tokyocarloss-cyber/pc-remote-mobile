@@ -40,7 +40,7 @@ private data class PadKey(val id:String,val label:String,val command:String,val 
    Box{TextButton(onClick={profileMenu=true}){Text("PERFIL  •  $profile",color=Color.White)};DropdownMenu(profileMenu,{profileMenu=false}){listOf("Padrão","Corrida","Ação","Personalizado").forEach{n->DropdownMenuItem({Text(n)},{loadProfile(n);profileMenu=false})}}}
    Button(onClick={edit=!edit}){Text(if(edit)"SALVAR" else "EDITAR")}
   }
-  if(edit){Text("Tamanho",color=Color.White);Slider(scale,{scale=it},valueRange=.65f..1.45f);Text("Opacidade",color=Color.White);Slider(alpha,{alpha=it},valueRange=.35f..1f);Text("Toque num botão para ocultar/mostrar pelo painel abaixo",color=Color(0xFF42D9FF));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)){defaults.take(6).forEach{k->FilterChip(selected=k.id !in hidden,onClick={hidden=if(k.id in hidden)hidden-k.id else hidden+k.id;prefs.edit().putBoolean(key(k.id,"visible"),k.id !in hidden).apply()},label={Text(k.label)})}}}
+  if(edit){Text("Tamanho",color=Color.White);Slider(scale,{scale=it},valueRange=.65f..1.45f);Text("Opacidade",color=Color.White);Slider(alpha,{alpha=it},valueRange=.35f..1f);Text("Toque num botão para ocultar/mostrar pelo painel abaixo",color=Color(0xFF42D9FF));Column(verticalArrangement=Arrangement.spacedBy(4.dp)){defaults.chunked(6).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)){row.forEach{k->FilterChip(selected=k.id !in hidden,onClick={hidden=if(k.id in hidden)hidden-k.id else hidden+k.id;prefs.edit().putBoolean(key(k.id,"visible"),k.id !in hidden).apply()},label={Text(k.label)})}}}}}
   BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).background(Color(0xFF080D14))){
    val w=maxWidth;val h=maxHeight
    defaults.filter{it.id !in hidden}.forEach{k->val p=pos[k.id]?:Offset(k.x,k.y)
@@ -60,7 +60,7 @@ private data class PadKey(val id:String,val label:String,val command:String,val 
      }
    }
   }
-  if(edit)Button(onClick={prefs.edit().apply{defaults.forEach{remove(key(it.id,"x"));remove(key(it.id,"y"))};remove("$profile:scale");remove("$profile:alpha")}.apply();scale=1f;alpha=.88f;pos=defaults.associate{it.id to Offset(it.x,it.y)}},Modifier.fillMaxWidth()){Text("RESTAURAR ESTE PERFIL")}
+  if(edit)Button(onClick={prefs.edit().apply{defaults.forEach{remove(key(it.id,"x"));remove(key(it.id,"y"))};remove("$profile:scale");remove("$profile:alpha");defaults.forEach{remove(key(it.id,"visible"))}}.apply();scale=1f;alpha=.88f;hidden=emptySet();pos=defaults.associate{it.id to Offset(it.x,it.y)}},Modifier.fillMaxWidth()){Text("RESTAURAR ESTE PERFIL")}
  }
  LaunchedEffect(scale,alpha,profile){prefs.edit().putFloat("$profile:scale",scale).putFloat("$profile:alpha",alpha).apply()}
 }
