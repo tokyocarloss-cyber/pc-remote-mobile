@@ -15,9 +15,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.input.pointer.awaitPointerEvent
-import androidx.compose.ui.input.pointer.awaitPointerEventScope
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.font.FontWeight
@@ -86,7 +83,6 @@ fun NotebookTouchpad(openKeyboard: () -> Unit) {
                                     val wheel = (-avgDy * 7f).toInt().coerceIn(-720, 720)
                                     if (wheel != 0) post("/scroll", wheel.toString())
                                 }
-
                                 val distance = hypot(
                                     (a.position.x - b.position.x).toDouble(),
                                     (a.position.y - b.position.y).toDouble()
