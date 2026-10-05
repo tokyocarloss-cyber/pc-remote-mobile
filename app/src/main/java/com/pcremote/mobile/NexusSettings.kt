@@ -21,7 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-val DefaultStores = listOf("Steam", "Epic", "Xbox", "EA", "Ubisoft", "Battle.net", "GOG", "Outros")
+val DefaultStores = listOf("Alll", "Steam", "Epic", "Xbox", "EA", "Ubisoft", "Battle.net", "GOG", "Outros")
 
 fun loadStoreOrder(ctx: Context): List<String> {
     val p = ctx.getSharedPreferences("nexus_settings", Context.MODE_PRIVATE)
@@ -126,9 +126,9 @@ fun NexusSettings() {
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.padding(14.dp)) {
-                Text("LOJAS E LAUNCHERS", color = NexusUi.Accent, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
+                Text("FONTES DA BIBLIOTECA", color = NexusUi.Accent, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
                 Spacer(Modifier.height(4.dp))
-                Text("Ative, desative e reorganize as fontes usadas na biblioteca.", color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+                Text("'Alll' representa a pasta Desktop\\Alll do PC. Ela é usada só para descobrir apps/jogos; arquivos recebidos continuam indo para Downloads.", color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
             }
         }
 
