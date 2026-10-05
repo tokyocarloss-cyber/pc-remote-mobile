@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity() {
 object Api {
     var host by mutableStateOf("")
     var connected by mutableStateOf(false)
+    var connectionMethod by mutableStateOf("—")
 
     fun post(path: String, b: String = "") {
         if (host.isBlank()) return
@@ -73,6 +75,32 @@ object Api {
     }
 }
 
+private fun pairRequest(ip: String): Boolean = try {
+    val c = URL("http://$ip:$PORT/pair").openConnection() as HttpURLConnection
+    c.requestMethod = "POST"
+    c.connectTimeout = 900
+    c.readTimeout = 900
+    c.doOutput = true
+    c.outputStream.use { }
+    val ok = c.responseCode in 200..299
+    c.disconnect()
+    ok
+} catch (_: Exception) { false }
+
+suspend fun connectToHost(raw: String, method: String): Boolean {
+    val ip = raw.trim().removePrefix("http://").removePrefix("https://").substringBefore(':').substringBefore('/')
+    if (ip.isBlank()) return false
+    if (!Discovery.checkHost(ip)) return false
+    val ok = withContext(Dispatchers.IO) { pairRequest(ip) }
+    if (ok) {
+        Api.host = ip
+        Api.connected = true
+        Api.connectionMethod = method
+        Discovery.detail = "Pareado com $ip"
+    }
+    return ok
+}
+
 @Composable
 fun RemoteApp() {
     var page by remember { mutableIntStateOf(0) }
@@ -81,11 +109,18 @@ fun RemoteApp() {
 
     LaunchedEffect(Unit) {
         while (true) {
-            if (!Api.connected) Discovery.findPc()?.let {
-                Api.host = it
-                Api.connected = true
+            if (!Api.connected) {
+                val found = Discovery.findPc()
+                if (found != null) connectToHost(found, Discovery.lastMethod)
+            } else {
+                val alive = withContext(Dispatchers.IO) { pairRequest(Api.host) }
+                if (!alive) {
+                    Api.connected = false
+                    Api.connectionMethod = "Reconectando"
+                    Discovery.detail = "O PC parou de responder. Tentando reconectar…"
+                }
             }
-            delay(if (Api.connected) 5000 else 2500)
+            delay(if (Api.connected) 4000 else 1800)
         }
     }
 
@@ -177,14 +212,14 @@ private fun ConnectionHero(go: (Int) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            if (Api.connected) "PC conectado" else "Procurando seu PC",
+                            if (Api.connected) "PC pareado" else "Procurando seu PC",
                             color = NexusUi.Text,
                             fontSize = 25.sp,
                             fontWeight = FontWeight.Black
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            if (Api.connected) Api.host else "Mantenha celular e PC na mesma rede",
+                            if (Api.connected) "${Api.host} • ${Api.connectionMethod}" else Discovery.detail,
                             color = NexusUi.Muted,
                             fontSize = 11.sp
                         )
@@ -206,17 +241,29 @@ private fun ConnectionHero(go: (Int) -> Unit) {
                         )
                     }
                 }
-                Spacer(Modifier.height(18.dp))
-                Button(
-                    onClick = { go(5) },
-                    enabled = Api.connected,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(15.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = NexusUi.AccentStrong)
-                ) {
-                    Icon(Icons.Default.DesktopWindows, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("ABRIR TELA DO PC", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(14.dp))
+                if (Api.connected) {
+                    Button(
+                        onClick = { go(5) },
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = NexusUi.AccentStrong)
+                    ) {
+                        Icon(Icons.Default.DesktopWindows, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("ABRIR TELA DO PC", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { go(8) },
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        border = BorderStroke(1.dp, NexusUi.Accent.copy(alpha = .45f))
+                    ) {
+                        Icon(Icons.Default.SettingsEthernet, null, Modifier.size(18.dp), tint = NexusUi.Accent)
+                        Spacer(Modifier.width(8.dp))
+                        Text("DETALHES / CONECTAR POR IP", color = NexusUi.Accent, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
