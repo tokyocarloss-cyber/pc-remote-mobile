@@ -10,14 +10,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 val DefaultStores = listOf("Steam", "Epic", "Xbox", "EA", "Ubisoft", "Battle.net", "GOG", "Outros")
 
@@ -34,7 +36,10 @@ fun isStoreEnabled(ctx: Context, store: String) =
 fun NexusSettings() {
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("nexus_settings", Context.MODE_PRIVATE) }
+    val scope = rememberCoroutineScope()
     var stores by remember { mutableStateOf(loadStoreOrder(ctx)) }
+    var manualIp by remember { mutableStateOf(prefs.getString("manual_ip", Api.host).orEmpty()) }
+    var manualResult by remember { mutableStateOf("") }
 
     fun persist() {
         prefs.edit().putString("store_order", stores.joinToString("|")).apply()
@@ -46,7 +51,77 @@ fun NexusSettings() {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Title("Configurações", "Personalize o que aparece no NEXUS")
+        Title("Configurações", "Conexão, biblioteca e preferências do NEXUS")
+
+        Surface(
+            color = NexusUi.Panel,
+            shape = RoundedCornerShape(22.dp),
+            border = BorderStroke(1.dp, NexusUi.Border),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Wifi, null, tint = if (Api.connected) NexusUi.Success else NexusUi.Accent)
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("CONEXÃO COM O PC", color = NexusUi.Text, fontWeight = FontWeight.Black)
+                        Text(
+                            if (Api.connected) "Pareado em ${Api.host}:8765 • ${Api.connectionMethod}" else Discovery.detail,
+                            color = NexusUi.Muted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = manualIp,
+                    onValueChange = { manualIp = it },
+                    label = { Text("IP do PC") },
+                    placeholder = { Text("Ex.: 192.168.18.45") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            val value = manualIp.trim()
+                            prefs.edit().putString("manual_ip", value).apply()
+                            manualResult = "Testando $value…"
+                            scope.launch {
+                                val ok = connectToHost(value, "IP manual")
+                                manualResult = if (ok) "Conectado com sucesso" else "Não respondeu. Confira IP, Wi‑Fi e Firewall."
+                            }
+                        },
+                        enabled = manualIp.isNotBlank(),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("CONECTAR") }
+
+                    OutlinedButton(
+                        onClick = {
+                            Api.connected = false
+                            Discovery.detail = "Nova busca solicitada…"
+                            manualResult = "Busca automática reiniciada"
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Refresh, null, Modifier.size(17.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("BUSCAR")
+                    }
+                }
+
+                if (manualResult.isNotBlank()) {
+                    Text(manualResult, color = if (Api.connected) NexusUi.Success else NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+                }
+
+                Text(
+                    "Método atual: ${Api.connectionMethod}\nBusca: ${Discovery.lastMethod}\nO PC precisa estar na mesma rede local e com o NEXUS aberto.",
+                    color = NexusUi.Muted,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
 
         Surface(
             color = NexusUi.Panel,
