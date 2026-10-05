@@ -1,7 +1,10 @@
 import ctypes, os, subprocess, sys, threading
 from pathlib import Path
 from http.server import ThreadingHTTPServer
-import pystray
+try:
+ import pystray
+except Exception:
+ pystray=None
 from PIL import Image, ImageDraw
 from pc_remote_server import H,PORT,local_ip,ROOT,GAMEPAD
 from drop_edge import DropEdge
@@ -17,17 +20,19 @@ def icon_image():
 def message(title,text):
  ctypes.windll.user32.MessageBoxW(0,text,title,0x40)
 
-def stop(icon,item=None):
+def stop(icon=None,item=None):
  global server
  if server:server.shutdown()
  try:
   if edge:edge.root.after(0,edge.root.destroy)
  except:pass
- icon.stop()
+ try:
+  if icon:icon.stop()
+ except:pass
 
-def open_folder(icon,item=None):os.startfile(str(ROOT))
+def open_folder(icon=None,item=None):os.startfile(str(ROOT))
 
-def install_gamepad_driver(icon,item=None):
+def install_gamepad_driver(icon=None,item=None):
  try:
   import vgamepad
   base=Path(vgamepad.__file__).resolve().parent
@@ -36,14 +41,16 @@ def install_gamepad_driver(icon,item=None):
   if not msi.exists():raise FileNotFoundError(str(msi))
   subprocess.Popen(['msiexec','/i',str(msi)])
   message('NEXUS PC Remote','Instalador do controle virtual aberto.\n\nConclua a instalação e reinicie o NEXUS PC Remote.')
- except Exception as e:message('NEXUS PC Remote','Não foi possível abrir o driver do controle virtual.\n'+str(e))
+ except Exception:
+  message('NEXUS PC Remote','O controle virtual opcional ainda não está instalado. O restante do NEXUS PC Remote continua funcionando normalmente.')
 
 def run_server():
  global server
  server=ThreadingHTTPServer(("0.0.0.0",PORT),H);server.serve_forever()
 
 def run_tray():
- pad='Controle virtual: pronto' if GAMEPAD else 'Controle virtual: instalar driver'
+ if pystray is None:return
+ pad='Controle virtual: pronto' if GAMEPAD else 'Controle virtual: indisponível'
  menu=pystray.Menu(
   pystray.MenuItem(lambda _:"NEXUS • "+local_ip()+":"+str(PORT),None,enabled=False),
   pystray.MenuItem(pad,install_gamepad_driver,enabled=GAMEPAD is None),
