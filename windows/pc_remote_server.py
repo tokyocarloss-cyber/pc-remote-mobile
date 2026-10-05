@@ -1,12 +1,15 @@
-import ctypes, io, json, os, re, shutil, socket, subprocess, urllib.parse, hashlib
+import ctypes, io, json, os, re, shutil, socket, subprocess, urllib.parse, hashlib, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 PORT=8765
+DISCOVERY_PORT=8766
 ROOT=Path.home()/"Downloads"/"PC Remote"; ROOT.mkdir(parents=True,exist_ok=True)
 OUTBOX=ROOT/"To Phone"; OUTBOX.mkdir(parents=True,exist_ok=True)
 ICON_DIR=ROOT/".icons"; ICON_DIR.mkdir(parents=True,exist_ok=True)
 u=ctypes.windll.user32
+LAST_SEEN=0.0
+LAST_CLIENT=''
 try:
  import vgamepad as vg
  GAMEPAD=vg.VX360Gamepad()
@@ -18,6 +21,13 @@ if GAMEPAD:
 
 KEYS={'A':0x41,'B':0x42,'X':0x58,'Y':0x59,'ENTER':0x0D,'ESC':0x1B,'SPACE':0x20,'UP':0x26,'DOWN':0x28,'LEFT':0x25,'RIGHT':0x27,'VOLUME_UP':0xAF,'VOLUME_DOWN':0xAE,'VOLUME_MUTE':0xAD,'MEDIA_PLAY':0xB3,'MEDIA_NEXT':0xB0,'MEDIA_PREV':0xB1,'LB':0x51,'RB':0x45,'LT':0x31,'RT':0x33,'L3':0x10,'R3':0x11,'START':0x0D,'SELECT':0x1B}
 APP_INDEX={}
+
+def mark_seen(client=''):
+ global LAST_SEEN,LAST_CLIENT
+ LAST_SEEN=time.monotonic()
+ if client:LAST_CLIENT=client
+
+def phone_connected():return time.monotonic()-LAST_SEEN<12
 
 def gamepad_event(raw):
  if not GAMEPAD:return False
@@ -142,6 +152,19 @@ def local_ip():
  except:return '127.0.0.1'
  finally:s.close()
 
+def run_discovery_responder():
+ s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+ s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+ try:s.bind(('',DISCOVERY_PORT))
+ except OSError:return
+ while True:
+  try:
+   data,addr=s.recvfrom(1024)
+   if data.strip().startswith(b'NEXUS_DISCOVER'):
+    payload=f'NEXUS|{local_ip()}|{PORT}'.encode()
+    s.sendto(payload,addr)
+  except Exception:pass
+
 class H(BaseHTTPRequestHandler):
  def sendb(self,b=b'OK',typ='text/plain',code=200):
   self.send_response(code);self.send_header('Access-Control-Allow-Origin','*');self.send_header('Content-Type',typ);self.send_header('Content-Length',str(len(b)));self.end_headers();self.wfile.write(b)
@@ -152,21 +175,24 @@ class H(BaseHTTPRequestHandler):
  def do_GET(self):
   p=urllib.parse.urlparse(self.path).path
   if p=='/ping':return self.sendb(b'PC Remote')
-  if p=='/status':return self.sendb(json.dumps({'gamepad':GAMEPAD is not None,'ip':local_ip()}).encode(),'application/json')
+  if p=='/status':
+   mark_seen(self.client_address[0])
+   return self.sendb(json.dumps({'gamepad':GAMEPAD is not None,'ip':local_ip(),'paired':phone_connected(),'client':LAST_CLIENT}).encode(),'application/json')
   if p=='/screen.jpg':
-   b=screenshot();return self.sendb(b,'image/jpeg',200 if b else 503)
-  if p=='/apps':return self.sendb(json.dumps(apps_catalog(),ensure_ascii=False).encode(),'application/json')
+   mark_seen(self.client_address[0]);b=screenshot();return self.sendb(b,'image/jpeg',200 if b else 503)
+  if p=='/apps':
+   mark_seen(self.client_address[0]);return self.sendb(json.dumps(apps_catalog(),ensure_ascii=False).encode(),'application/json')
   if p.startswith('/app-icon/'):
-   name=urllib.parse.unquote(p[10:]);b,typ=app_icon(name)
+   mark_seen(self.client_address[0]);name=urllib.parse.unquote(p[10:]);b,typ=app_icon(name)
    return self.sendb(b,typ) if b else self.sendb(b'',code=404)
   if p=='/outbox':
-   items=[{'name':x.name,'size':x.stat().st_size} for x in OUTBOX.iterdir() if x.is_file()]
+   mark_seen(self.client_address[0]);items=[{'name':x.name,'size':x.stat().st_size} for x in OUTBOX.iterdir() if x.is_file()]
    return self.sendb(json.dumps(items,ensure_ascii=False).encode(),'application/json')
   if p.startswith('/outbox/'):
-   f=OUTBOX/Path(urllib.parse.unquote(p[8:])).name
+   mark_seen(self.client_address[0]);f=OUTBOX/Path(urllib.parse.unquote(p[8:])).name
    if f.exists():return self.sendb(f.read_bytes(),'application/octet-stream')
   if p.startswith('/download/'):
-   f=ROOT/Path(urllib.parse.unquote(p[10:])).name
+   mark_seen(self.client_address[0]);f=ROOT/Path(urllib.parse.unquote(p[10:])).name
    if f.exists():return self.sendb(f.read_bytes(),'application/octet-stream')
   return self.sendb(b'',code=404)
  def do_POST(self):
@@ -174,6 +200,8 @@ class H(BaseHTTPRequestHandler):
   except ValueError as e:return self.sendb(str(e).encode(),code=413)
   try:
    p=urllib.parse.urlparse(self.path).path
+   mark_seen(self.client_address[0])
+   if p=='/pair':return self.sendb(json.dumps({'paired':True,'ip':local_ip(),'client':LAST_CLIENT}).encode(),'application/json')
    if p=='/gamepad':
     if not gamepad_event(raw):return self.sendb(b'Virtual gamepad unavailable',code=503)
    elif p=='/key':press(KEYS.get(raw.decode().strip(),0))
@@ -194,6 +222,8 @@ class H(BaseHTTPRequestHandler):
   except Exception as e:return self.sendb(str(e).encode(),code=500)
  def log_message(self,*a):pass
 
-def run_server():ThreadingHTTPServer(('0.0.0.0',PORT),H).serve_forever()
+def run_server():
+ threading.Thread(target=run_discovery_responder,daemon=True,name='NexusDiscovery').start()
+ ThreadingHTTPServer(('0.0.0.0',PORT),H).serve_forever()
 if __name__=='__main__':
  print('=== NEXUS PC REMOTE ===\nIP:',local_ip(),'\nPorta:',PORT,'\nArquivos:',ROOT);run_server()
