@@ -28,6 +28,8 @@ jobs:
           python -c "import pystray, PIL, tkinterdnd2; print('Runtime dependencies OK')"
       - name: Validate Python sources
         run: python -m py_compile pc_remote_server.py drop_edge.py companion.py
+      - name: Validate tray menu
+        run: python -c "import companion; companion.make_menu(); print('Tray menu OK')"
       - name: Build PC Remote EXE
         run: >-
           python -m PyInstaller --noconfirm --clean --onefile --windowed
