@@ -27,9 +27,9 @@ jobs:
           python -m pip install --disable-pip-version-check --prefer-binary pyinstaller
           python -c "import pystray, PIL, tkinterdnd2, mss; print('Runtime dependencies OK')"
       - name: Validate Python sources
-        run: python -m py_compile pc_remote_server.py drop_edge.py companion.py
+        run: python -m py_compile pc_remote_server.py drop_edge.py companion_v2.py
       - name: Validate tray menu
-        run: python -c "import companion; companion.make_menu(); print('Tray menu OK')"
+        run: python -c "import companion_v2; companion_v2.make_menu(); print('Tray menu OK')"
       - name: Build PC Remote EXE
         run: >-
           python -m PyInstaller --noconfirm --clean --onefile --windowed
@@ -40,7 +40,7 @@ jobs:
           --collect-all mss
           --hidden-import pystray._win32
           --hidden-import pystray._base
-          companion.py
+          companion_v2.py
       - name: Verify bundled runtime
         shell: powershell
         run: |
