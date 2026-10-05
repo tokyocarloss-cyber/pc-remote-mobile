@@ -39,9 +39,11 @@ class ShareReceiverActivity : Activity() {
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "arquivo"
     } catch (_: Exception) { uri.lastPathSegment?.substringAfterLast('/') ?: "arquivo" }
 
-    private fun sendUri(uri: Uri): Boolean = try {
-        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return false
-        if (bytes.isEmpty()) return false
-        RemoteClient.post("/upload/" + URLEncoder.encode(displayName(uri).takeLast(180), "UTF-8"), bytes)
-    } catch (_: Exception) { false }
+    private fun sendUri(uri: Uri): Boolean {
+        return try {
+            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return false
+            if (bytes.isEmpty()) return false
+            RemoteClient.post("/upload/" + URLEncoder.encode(displayName(uri).takeLast(180), "UTF-8"), bytes)
+        } catch (_: Exception) { false }
+    }
 }
