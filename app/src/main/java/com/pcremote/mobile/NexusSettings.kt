@@ -41,14 +41,10 @@ fun NexusSettings() {
     var manualIp by remember { mutableStateOf(prefs.getString("manual_ip", Api.host).orEmpty()) }
     var manualResult by remember { mutableStateOf("") }
 
-    fun persist() {
-        prefs.edit().putString("store_order", stores.joinToString("|")).apply()
-    }
+    fun persist() { prefs.edit().putString("store_order", stores.joinToString("|")).apply() }
 
     Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Title("Configurações", "Conexão, biblioteca e preferências do NEXUS")
@@ -87,10 +83,10 @@ fun NexusSettings() {
                         onClick = {
                             val value = manualIp.trim()
                             prefs.edit().putString("manual_ip", value).apply()
-                            manualResult = "Testando $value…"
+                            manualResult = "Testando $value:8765…"
                             scope.launch {
                                 val ok = connectToHost(value, "IP manual")
-                                manualResult = if (ok) "Conectado com sucesso" else "Não respondeu. Confira IP, Wi‑Fi e Firewall."
+                                manualResult = if (ok) "Conectado com sucesso" else "Sem resposta na porta 8765. Verifique o NEXUS no PC e o Firewall."
                             }
                         },
                         enabled = manualIp.isNotBlank(),
@@ -116,7 +112,7 @@ fun NexusSettings() {
                 }
 
                 Text(
-                    "Método atual: ${Api.connectionMethod}\nBusca: ${Discovery.lastMethod}\nO PC precisa estar na mesma rede local e com o NEXUS aberto.",
+                    "Celular: ${Discovery.networkSummary()}\nMétodo atual: ${Api.connectionMethod}\nBusca: ${Discovery.lastMethod}\nPC no cabo + celular no Wi‑Fi funciona normalmente quando os dois estão na mesma rede/roteador.",
                     color = NexusUi.Muted,
                     style = MaterialTheme.typography.labelSmall
                 )
@@ -144,68 +140,35 @@ fun NexusSettings() {
                 border = BorderStroke(1.dp, NexusUi.Border),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        Modifier
-                            .size(36.dp)
-                            .background(NexusUi.Accent.copy(alpha = .10f), RoundedCornerShape(11.dp)),
+                        Modifier.size(36.dp).background(NexusUi.Accent.copy(alpha = .10f), RoundedCornerShape(11.dp)),
                         contentAlignment = Alignment.Center
-                    ) {
-                        Text(store.take(1), color = NexusUi.Accent, fontWeight = FontWeight.Black)
-                    }
+                    ) { Text(store.take(1), color = NexusUi.Accent, fontWeight = FontWeight.Black) }
                     Spacer(Modifier.width(10.dp))
                     Text(store, Modifier.weight(1f), color = NexusUi.Text, fontWeight = FontWeight.SemiBold)
-                    IconButton(
-                        onClick = {
-                            if (index > 0) {
-                                stores = stores.toMutableList().also { java.util.Collections.swap(it, index, index - 1) }
-                                persist()
-                            }
-                        },
-                        enabled = index > 0,
-                        modifier = Modifier.size(34.dp)
-                    ) {
-                        Icon(Icons.Default.KeyboardArrowUp, null, tint = if (index > 0) NexusUi.Text else NexusUi.Border)
+                    IconButton(onClick = {
+                        if(index>0){stores=stores.toMutableList().also{java.util.Collections.swap(it,index,index-1)};persist()}
+                    },enabled=index>0,modifier=Modifier.size(34.dp)) {
+                        Icon(Icons.Default.KeyboardArrowUp,null,tint=if(index>0)NexusUi.Text else NexusUi.Border)
                     }
-                    IconButton(
-                        onClick = {
-                            if (index < stores.lastIndex) {
-                                stores = stores.toMutableList().also { java.util.Collections.swap(it, index, index + 1) }
-                                persist()
-                            }
-                        },
-                        enabled = index < stores.lastIndex,
-                        modifier = Modifier.size(34.dp)
-                    ) {
-                        Icon(Icons.Default.KeyboardArrowDown, null, tint = if (index < stores.lastIndex) NexusUi.Text else NexusUi.Border)
+                    IconButton(onClick = {
+                        if(index<stores.lastIndex){stores=stores.toMutableList().also{java.util.Collections.swap(it,index,index+1)};persist()}
+                    },enabled=index<stores.lastIndex,modifier=Modifier.size(34.dp)) {
+                        Icon(Icons.Default.KeyboardArrowDown,null,tint=if(index<stores.lastIndex)NexusUi.Text else NexusUi.Border)
                     }
-                    Switch(
-                        checked = enabled,
-                        onCheckedChange = {
-                            enabled = it
-                            prefs.edit().putBoolean("store_$store", it).apply()
-                        }
-                    )
+                    Switch(checked=enabled,onCheckedChange={enabled=it;prefs.edit().putBoolean("store_$store",it).apply()})
                 }
             }
         }
 
-        Surface(
-            color = NexusUi.Panel,
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, NexusUi.Border),
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Surface(color=NexusUi.Panel,shape=RoundedCornerShape(18.dp),border=BorderStroke(1.dp,NexusUi.Border),modifier=Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
-                Text("VISUAL", color = NexusUi.Text, fontWeight = FontWeight.Bold)
+                Text("VISUAL",color=NexusUi.Text,fontWeight=FontWeight.Bold)
                 Spacer(Modifier.height(3.dp))
-                Text("Tema escuro, contraste alto e navegação compacta para não cortar conteúdo em telas pequenas.", color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+                Text("Tema escuro, contraste alto e navegação compacta para não cortar conteúdo em telas pequenas.",color=NexusUi.Muted,style=MaterialTheme.typography.bodySmall)
             }
         }
-
         Spacer(Modifier.height(4.dp))
     }
 }
