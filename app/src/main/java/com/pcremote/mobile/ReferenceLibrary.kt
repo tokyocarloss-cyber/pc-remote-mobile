@@ -2,6 +2,12 @@ package com.pcremote.mobile
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -22,8 +28,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -100,8 +108,7 @@ fun ReferenceLibrary() {
             customPrefs.edit().putStringSet("games", games).putBoolean("games_initialized", true).apply()
         }
         if (apps.isNotEmpty() && !customPrefs.getBoolean("radial_initialized", false)) {
-            val seed = games.ifEmpty { apps.filter(::autoGame).map { it.name }.toSet() }
-            radial = apps.filter { it.name in seed }.take(12).map { it.name }.toSet()
+            radial = apps.filter { it.name in games }.take(16).map { it.name }.toSet()
             if (radial.isEmpty()) radial = apps.take(8).map { it.name }.toSet()
             customPrefs.edit().putStringSet("radial", radial).putBoolean("radial_initialized", true).apply()
         }
@@ -128,6 +135,7 @@ fun ReferenceLibrary() {
             onDismiss = { wheel = false },
             onCustomize = { wheel = false; manager = true },
             onLaunch = { app ->
+                NexusEffects.play(ctx, NexusEffect.SELECT)
                 scope.launch(Dispatchers.IO) { Api.post("/launch", app.name) }
                 wheel = false
             }
@@ -169,36 +177,31 @@ fun ReferenceLibrary() {
 
         Surface(
             color = NexusUi.Panel,
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, NexusUi.Accent.copy(alpha = .32f)),
-            modifier = Modifier.fillMaxWidth()
+            shape = RoundedCornerShape(NexusUi.cardRadius.dp),
+            border = BorderStroke(1.dp, NexusUi.Accent.copy(alpha = .34f)),
+            modifier = Modifier.fillMaxWidth().clickable(enabled = base.isNotEmpty()) {
+                NexusEffects.play(ctx, NexusEffect.OPEN)
+                wheel = true
+            }
         ) {
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(50.dp).background(NexusUi.Accent.copy(alpha = .13f), CircleShape).clickable(enabled = base.isNotEmpty()) { wheel = true },
-                    contentAlignment = Alignment.Center
-                ) { Icon(Icons.Default.RadioButtonChecked, null, tint = NexusUi.Accent, modifier = Modifier.size(29.dp)) }
+                Box(Modifier.size(52.dp).background(NexusUi.Accent.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.RadioButtonChecked, null, tint = NexusUi.Accent, modifier = Modifier.size(30.dp))
+                }
                 Spacer(Modifier.width(11.dp))
-                Column(Modifier.weight(1f).clickable(enabled = base.isNotEmpty()) { wheel = true }) {
+                Column(Modifier.weight(1f)) {
                     Text("RODA DE APPS / JOGOS", color = NexusUi.Text, fontWeight = FontWeight.Black, fontSize = 14.sp)
-                    Text(
-                        if (base.isEmpty()) "Conecte ao PC para ativar" else "Segure no centro, arraste para o app e solte",
-                        color = NexusUi.Muted,
-                        fontSize = 9.sp
-                    )
-                    Text("${radial.count { it in base.map { a -> a.name }.toSet() }} selecionados • ${games.size} marcados como jogo", color = NexusUi.Accent, fontSize = 8.sp)
+                    Text(if (base.isEmpty()) "Conecte ao PC para ativar" else "Segure no centro, arraste e solte", color = NexusUi.Muted, fontSize = 9.sp)
+                    Text("${radial.count { r -> base.any { it.name == r } }} na roda • ${games.size} jogos", color = NexusUi.Accent, fontSize = 8.sp)
                 }
-                IconButton(onClick = { if (base.isNotEmpty()) manager = true }) {
-                    Icon(Icons.Default.Tune, "Personalizar roda", tint = NexusUi.Accent)
-                }
+                IconButton(onClick = { if (base.isNotEmpty()) manager = true }) { Icon(Icons.Default.Tune, "Personalizar roda", tint = NexusUi.Accent) }
             }
         }
 
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-            placeholder = { Text("Pesquisar aplicativos…") },
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = NexusUi.Accent) },
+            placeholder = { Text("Pesquisar aplicativos…") }, leadingIcon = { Icon(Icons.Default.Search, null, tint = NexusUi.Accent) },
             shape = RoundedCornerShape(17.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = NexusUi.Panel, unfocusedContainerColor = NexusUi.Panel,
@@ -209,7 +212,9 @@ fun ReferenceLibrary() {
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             listOf("Todos", "Jogos", "Favoritos").forEach { name ->
                 FilterChip(
-                    selected = category == name, onClick = { category = name }, label = { Text(name) },
+                    selected = category == name,
+                    onClick = { category = name },
+                    label = { Text(name) },
                     leadingIcon = when (name) {
                         "Jogos" -> {{ Icon(Icons.Default.SportsEsports, null, Modifier.size(15.dp)) }}
                         "Favoritos" -> {{ Icon(Icons.Default.Star, null, Modifier.size(15.dp)) }}
@@ -249,16 +254,16 @@ fun ReferenceLibrary() {
 @Composable
 private fun RefAppCard(app: RefApp, favorite: Boolean, game: Boolean, onFavorite: () -> Unit, onClick: () -> Unit) {
     Surface(
-        color = NexusUi.Panel, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, NexusUi.Border),
+        color = NexusUi.Panel,
+        shape = RoundedCornerShape(NexusUi.cardRadius.dp),
+        border = BorderStroke(1.dp, NexusUi.Border),
         modifier = Modifier.fillMaxWidth().aspectRatio(.88f).clickable(onClick = onClick)
     ) {
         Box(Modifier.fillMaxSize().padding(8.dp)) {
             IconButton(onClick = onFavorite, modifier = Modifier.align(Alignment.TopEnd).size(27.dp)) {
                 Icon(if (favorite) Icons.Default.Star else Icons.Default.StarBorder, null, tint = if (favorite) Color(0xFFFFD45C) else NexusUi.Muted, modifier = Modifier.size(16.dp))
             }
-            if (game) {
-                Icon(Icons.Default.SportsEsports, null, tint = NexusUi.Accent, modifier = Modifier.align(Alignment.TopStart).size(15.dp))
-            }
+            if (game) Icon(Icons.Default.SportsEsports, null, tint = NexusUi.Accent, modifier = Modifier.align(Alignment.TopStart).size(15.dp))
             Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                 RefAppIcon(app, 54)
                 Spacer(Modifier.height(8.dp))
@@ -276,7 +281,7 @@ private fun RefAppIcon(app: RefApp, size: Int) {
         Text(app.name.take(1).uppercase(), color = NexusUi.Accent, fontWeight = FontWeight.Black)
         if (Api.host.isNotBlank()) {
             AsyncImage(
-                model = "http://${Api.host}:8765/app-icon/${Uri.encode(app.name)}?v=3",
+                model = "http://${Api.host}:8765/app-icon/${Uri.encode(app.name)}?v=5",
                 contentDescription = app.name,
                 modifier = Modifier.fillMaxSize().padding(3.dp),
                 contentScale = ContentScale.Fit
@@ -309,13 +314,10 @@ private fun LibraryManagerDialog(
                     IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, null, tint = NexusUi.Text) }
                     Column(Modifier.weight(1f)) {
                         Text("Personalizar Biblioteca", color = NexusUi.Text, fontWeight = FontWeight.Black, fontSize = 20.sp)
-                        Text("Marque exatamente o que é jogo e o que entra na roda", color = NexusUi.Muted, fontSize = 10.sp)
+                        Text("Marque o que é jogo e o que entra na roda", color = NexusUi.Muted, fontSize = 10.sp)
                     }
                 }
-                OutlinedTextField(
-                    value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    placeholder = { Text("Buscar app ou jogo") }, leadingIcon = { Icon(Icons.Default.Search, null) }
-                )
+                OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("Buscar app ou jogo") }, leadingIcon = { Icon(Icons.Default.Search, null) })
                 Spacer(Modifier.height(8.dp))
                 Button(onClick = useGamesOnWheel, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.SportsEsports, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("USAR SÓ OS JOGOS NA RODA")
@@ -358,11 +360,24 @@ private fun RadialLauncherDialog(
     onLaunch: (RefApp) -> Unit
 ) {
     if (allApps.isEmpty()) return
+    val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var category by remember { mutableStateOf("Minha roda") }
     var page by remember { mutableIntStateOf(0) }
     var selected by remember { mutableIntStateOf(-1) }
-    var dragging by remember { mutableStateOf(false) }
+    var armed by remember { mutableStateOf(false) }
+    var appeared by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { appeared = true }
+    val enterScale by animateFloatAsState(if (appeared) 1f else .72f, tween(320), label = "radialEnter")
+    val enterAlpha by animateFloatAsState(if (appeared) 1f else 0f, tween(260), label = "radialAlpha")
+    val pulse = rememberInfiniteTransition(label = "radialPulse")
+    val pulseScale by pulse.animateFloat(
+        initialValue = .96f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(tween(950), RepeatMode.Reverse),
+        label = "centerPulse"
+    )
 
     val customPool = allApps.filter { it.name in radialNames }
     val pool = when (category) {
@@ -377,7 +392,8 @@ private fun RadialLauncherDialog(
     val chosen = selected.takeIf { it in slots.indices }?.let { slots[it] }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .97f)).statusBarsPadding().navigationBarsPadding()) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .94f)).statusBarsPadding().navigationBarsPadding()) {
+            NexusThemeBackdrop(Modifier.fillMaxSize(), subtle = true)
             Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Fechar", tint = NexusUi.Text) }
@@ -392,7 +408,7 @@ private fun RadialLauncherDialog(
                     listOf("Minha roda", "Jogos", "Favoritos").forEach { name ->
                         FilterChip(
                             selected = category == name,
-                            onClick = { category = name; page = 0; selected = -1 },
+                            onClick = { category = name; page = 0; selected = -1; NexusEffects.play(ctx, NexusEffect.TICK) },
                             enabled = when (name) {
                                 "Jogos" -> gameNames.isNotEmpty()
                                 "Favoritos" -> favorites.isNotEmpty()
@@ -408,97 +424,124 @@ private fun RadialLauncherDialog(
                     val diameter = if (maxWidth < maxHeight) maxWidth else maxHeight
                     val ringSize = diameter * .94f
                     val radius = diameter * .36f
-                    val itemSize = 66.dp
+                    val itemSize = 68.dp
+                    val centerRadiusFraction = .22f
 
-                    Box(Modifier.size(ringSize), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .size(ringSize)
+                            .scale(enterScale)
+                            .pointerInput(slots, category, page) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { start ->
+                                        val cx = size.width / 2f
+                                        val cy = size.height / 2f
+                                        val d = hypot((start.x - cx).toDouble(), (start.y - cy).toDouble()).toFloat()
+                                        armed = d <= size.minDimension * .28f
+                                        if (armed) {
+                                            selected = -1
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            NexusEffects.play(ctx, NexusEffect.OPEN)
+                                        }
+                                    },
+                                    onDrag = { change, _ ->
+                                        if (!armed || slots.isEmpty()) return@detectDragGesturesAfterLongPress
+                                        change.consume()
+                                        val cx = size.width / 2f
+                                        val cy = size.height / 2f
+                                        val dx = change.position.x - cx
+                                        val dy = change.position.y - cy
+                                        val distance = hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                                        val next = if (distance < size.minDimension * .28f) -1 else {
+                                            var a = atan2(dy.toDouble(), dx.toDouble()) + PI / 2.0
+                                            while (a < 0) a += 2.0 * PI
+                                            val step = 2.0 * PI / slots.size
+                                            floor((a + step / 2.0) / step).toInt() % slots.size
+                                        }
+                                        if (next != selected) {
+                                            selected = next
+                                            if (next >= 0) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                NexusEffects.play(ctx, NexusEffect.TICK)
+                                            }
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        val target = selected.takeIf { it in slots.indices }?.let { slots[it] }
+                                        armed = false
+                                        selected = -1
+                                        if (target != null) onLaunch(target)
+                                    },
+                                    onDragCancel = { armed = false; selected = -1 }
+                                )
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
                         Canvas(Modifier.fillMaxSize()) {
                             val sweep = if (slots.isEmpty()) 360f else 360f / slots.size
-                            val inset = size.minDimension * .045f
+                            val inset = size.minDimension * .035f
                             slots.forEachIndexed { index, _ ->
                                 drawArc(
-                                    color = if (index == selected) NexusUi.Accent.copy(alpha = .30f) else NexusUi.Panel,
-                                    startAngle = -90f + index * sweep - sweep / 2f + 1.2f,
-                                    sweepAngle = sweep - 2.4f,
+                                    color = if (index == selected) NexusUi.Accent.copy(alpha = .42f) else NexusUi.Panel.copy(alpha = .88f),
+                                    startAngle = -90f + index * sweep - sweep / 2f + 1.4f,
+                                    sweepAngle = sweep - 2.8f,
                                     useCenter = true,
                                     topLeft = Offset(inset, inset),
                                     size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2)
                                 )
                             }
-                            drawCircle(Color.Black, radius = size.minDimension * .245f)
+                            drawCircle(Color.Black.copy(alpha = .94f), radius = size.minDimension * centerRadiusFraction)
                             drawCircle(
-                                if (dragging) NexusUi.Accent else NexusUi.Border,
-                                radius = size.minDimension * .245f,
-                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = if (dragging) 5f else 2f)
+                                if (armed) NexusUi.Accent else NexusUi.Border,
+                                radius = size.minDimension * centerRadiusFraction,
+                                style = Stroke(width = if (armed) 6f else 2f)
                             )
+                            if (selected in slots.indices) {
+                                val a = -PI / 2.0 + 2.0 * PI * selected / slots.size
+                                val end = Offset(
+                                    center.x + cos(a).toFloat() * size.minDimension * .31f,
+                                    center.y + sin(a).toFloat() * size.minDimension * .31f
+                                )
+                                drawLine(NexusUi.Accent.copy(alpha = .72f), center, end, strokeWidth = 5f)
+                                drawCircle(NexusUi.Accent, radius = 7f, center = end)
+                            }
                         }
 
                         slots.forEachIndexed { index, app ->
                             val angle = -PI / 2.0 + 2.0 * PI * index / slots.size
                             val x = ringSize / 2 + radius * cos(angle).toFloat() - itemSize / 2
                             val y = ringSize / 2 + radius * sin(angle).toFloat() - itemSize / 2
-                            Column(Modifier.offset(x, y).width(itemSize), horizontalAlignment = Alignment.CenterHorizontally) {
+                            val itemScale by animateFloatAsState(if (selected == index) 1.18f else 1f, tween(120), label = "radialItem$index")
+                            Column(Modifier.offset(x, y).width(itemSize).scale(itemScale), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Surface(
                                     color = if (selected == index) NexusUi.PanelRaised else NexusUi.Panel,
                                     shape = CircleShape,
-                                    border = BorderStroke(if (selected == index) 2.dp else 1.dp, if (selected == index) NexusUi.Accent else NexusUi.Border),
+                                    border = BorderStroke(if (selected == index) 3.dp else 1.dp, if (selected == index) NexusUi.Accent else NexusUi.Border),
+                                    shadowElevation = if (selected == index) 16.dp else 2.dp,
                                     modifier = Modifier.size(itemSize).clickable { onLaunch(app) }
-                                ) { Box(contentAlignment = Alignment.Center) { RefAppIcon(app, 50) } }
+                                ) { Box(contentAlignment = Alignment.Center) { RefAppIcon(app, 51) } }
                                 Spacer(Modifier.height(3.dp))
                                 Text(app.name, color = if (selected == index) NexusUi.Text else NexusUi.Muted, fontSize = 7.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                             }
                         }
 
                         Surface(
-                            color = if (dragging) NexusUi.PanelRaised else Color.Black,
+                            color = if (armed) NexusUi.PanelRaised else Color.Black.copy(alpha = .92f),
                             shape = CircleShape,
-                            border = BorderStroke(2.dp, if (dragging) NexusUi.Accent else NexusUi.Border),
-                            modifier = Modifier
-                                .size(diameter * .31f)
-                                .pointerInput(slots, category, page) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            dragging = true
-                                            selected = -1
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        },
-                                        onDrag = { change, _ ->
-                                            change.consume()
-                                            if (slots.isEmpty()) return@detectDragGesturesAfterLongPress
-                                            val center = Offset(size.width / 2f, size.height / 2f)
-                                            val dx = change.position.x - center.x
-                                            val dy = change.position.y - center.y
-                                            val distance = hypot(dx.toDouble(), dy.toDouble()).toFloat()
-                                            val next = if (distance < size.minDimension * .55f) -1 else {
-                                                var a = atan2(dy.toDouble(), dx.toDouble()) + PI / 2.0
-                                                while (a < 0) a += 2.0 * PI
-                                                val step = 2.0 * PI / slots.size
-                                                floor((a + step / 2.0) / step).toInt() % slots.size
-                                            }
-                                            if (next != selected) {
-                                                selected = next
-                                                if (next >= 0) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            }
-                                        },
-                                        onDragEnd = {
-                                            val target = selected.takeIf { it in slots.indices }?.let { slots[it] }
-                                            dragging = false
-                                            selected = -1
-                                            if (target != null) onLaunch(target)
-                                        },
-                                        onDragCancel = { dragging = false; selected = -1 }
-                                    )
-                                }
+                            border = BorderStroke(2.dp, if (armed) NexusUi.Accent else NexusUi.Border),
+                            shadowElevation = if (armed) 18.dp else 5.dp,
+                            modifier = Modifier.size(diameter * .31f).scale(if (armed) 1f else pulseScale)
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.padding(8.dp)) {
                                 if (chosen != null) {
-                                    RefAppIcon(chosen, 52)
+                                    RefAppIcon(chosen, 54)
                                     Spacer(Modifier.height(5.dp))
                                     Text(chosen.name, color = NexusUi.Text, fontWeight = FontWeight.Bold, fontSize = 9.sp, maxLines = 2, textAlign = TextAlign.Center)
                                     Text("SOLTE PARA ABRIR", color = NexusUi.Accent, fontSize = 7.sp, fontWeight = FontWeight.Black)
                                 } else {
                                     Icon(Icons.Default.TouchApp, null, tint = NexusUi.Accent, modifier = Modifier.size(31.dp))
                                     Spacer(Modifier.height(5.dp))
-                                    Text(if (dragging) "ARRASTE" else "SEGURE", color = NexusUi.Text, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                                    Text(if (armed) "ARRASTE" else "SEGURE", color = NexusUi.Text, fontWeight = FontWeight.Black, fontSize = 12.sp)
                                     Text("NO CENTRO", color = NexusUi.Muted, fontSize = 7.sp)
                                 }
                             }
