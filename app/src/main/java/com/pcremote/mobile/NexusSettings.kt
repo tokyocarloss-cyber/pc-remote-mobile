@@ -10,11 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,6 +31,19 @@ fun loadStoreOrder(ctx: Context): List<String> {
 fun isStoreEnabled(ctx: Context, store: String) =
     ctx.getSharedPreferences("nexus_settings", Context.MODE_PRIVATE).getBoolean("store_$store", true)
 
+private fun themeFlavor(name: String): String = when (name) {
+    "Attack on Titan" -> "militar • cortes secos • metal"
+    "Frutiger Aero" -> "vidro • bolhas • movimento leve"
+    "Dark Souls" -> "cinzas • âmbar • transições lentas"
+    "Anime Prism" -> "prisma • linhas rápidas • brilho"
+    "Naruto" -> "chakra • energia • pulsos"
+    "Cyber Samurai" -> "cortes neon • ritmo rápido"
+    "Sakura Night" -> "pétalas • brilho suave • fluido"
+    "Retro CRT" -> "scanlines • cantos retos • bipes"
+    "Arctic Glass" -> "gelo • vidro • partículas"
+    else -> "grade neon • resposta rápida • sci-fi"
+}
+
 @Composable
 fun NexusSettings() {
     val ctx = LocalContext.current
@@ -44,6 +53,7 @@ fun NexusSettings() {
     var manualIp by remember { mutableStateOf(prefs.getString("manual_ip", Api.host).orEmpty()) }
     var manualResult by remember { mutableStateOf("") }
     var themeName by remember { mutableStateOf(prefs.getString("theme", "NEXUS Neon") ?: "NEXUS Neon") }
+    var themeSounds by remember { mutableStateOf(prefs.getBoolean("theme_sounds", true)) }
 
     LaunchedEffect(Unit) { NexusUi.applyTheme(themeName) }
 
@@ -52,6 +62,7 @@ fun NexusSettings() {
         themeName = name
         prefs.edit().putString("theme", name).apply()
         NexusUi.applyTheme(name)
+        NexusEffects.play(ctx, NexusEffect.SELECT)
     }
 
     Column(
@@ -61,8 +72,8 @@ fun NexusSettings() {
         Title("Configurações", "Conexão, biblioteca, visual e preferências do NEXUS")
 
         Surface(
-            color = NexusUi.Panel,
-            shape = RoundedCornerShape(22.dp),
+            color = NexusUi.Panel.copy(alpha = .94f),
+            shape = RoundedCornerShape(NexusUi.cardRadius.dp),
             border = BorderStroke(1.dp, NexusUi.Border),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -131,8 +142,8 @@ fun NexusSettings() {
         }
 
         Surface(
-            color = NexusUi.Panel,
-            shape = RoundedCornerShape(22.dp),
+            color = NexusUi.Panel.copy(alpha = .94f),
+            shape = RoundedCornerShape(NexusUi.cardRadius.dp),
             border = BorderStroke(1.dp, NexusUi.Border),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -140,40 +151,63 @@ fun NexusSettings() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Palette, null, tint = NexusUi.Accent)
                     Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text("TEMAS", color = NexusUi.Text, fontWeight = FontWeight.Black)
-                        Text("10 estilos completos para mudar a personalidade do app", color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+                    Column(Modifier.weight(1f)) {
+                        Text("SKINS COMPLETAS", color = NexusUi.Text, fontWeight = FontWeight.Black)
+                        Text("Mudam formas, fundo animado, ritmo das transições e sons", color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                NexusThemes.chunked(2).forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        row.forEach { theme ->
-                            val selected = themeName == theme.name
-                            Surface(
-                                color = if (selected) theme.panelRaised else NexusUi.BackgroundSoft,
-                                shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) theme.accent else NexusUi.Border),
-                                modifier = Modifier.weight(1f).height(66.dp).clickable { selectTheme(theme.name) }
-                            ) {
-                                Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Box(Modifier.size(34.dp).background(theme.accent, CircleShape))
-                                    Spacer(Modifier.width(8.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(theme.name, color = NexusUi.Text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 2)
-                                        Text(if (selected) "ATIVO" else "USAR", color = if (selected) theme.accent else NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
-                                    }
-                                }
-                            }
+
+                Surface(color = NexusUi.BackgroundSoft, shape = RoundedCornerShape(NexusUi.cardRadius.dp), border = BorderStroke(1.dp, NexusUi.Border)) {
+                    Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.VolumeUp, null, tint = NexusUi.Accent)
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Sons do tema", color = NexusUi.Text, fontWeight = FontWeight.SemiBold)
+                            Text("Cada skin usa uma resposta sonora própria", color = NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
                         }
-                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                        Switch(checked = themeSounds, onCheckedChange = {
+                            themeSounds = it
+                            prefs.edit().putBoolean("theme_sounds", it).apply()
+                            if (it) NexusEffects.play(ctx, NexusEffect.SELECT)
+                        })
+                    }
+                }
+
+                NexusThemes.forEach { theme ->
+                    val selected = themeName == theme.name
+                    Surface(
+                        color = if (selected) theme.panelRaised else NexusUi.BackgroundSoft,
+                        shape = RoundedCornerShape(
+                            when (theme.name) {
+                                "Attack on Titan" -> 9.dp
+                                "Dark Souls" -> 7.dp
+                                "Retro CRT" -> 4.dp
+                                "Frutiger Aero", "Sakura Night", "Arctic Glass" -> 24.dp
+                                else -> 16.dp
+                            }
+                        ),
+                        border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) theme.accent else NexusUi.Border),
+                        modifier = Modifier.fillMaxWidth().height(76.dp).clickable { selectTheme(theme.name) }
+                    ) {
+                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(42.dp).background(theme.accent, CircleShape), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.AutoAwesome, null, tint = theme.background, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(theme.name, color = NexusUi.Text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                Text(themeFlavor(theme.name), color = if (selected) theme.accent else NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
+                            }
+                            if (selected) Icon(Icons.Default.CheckCircle, null, tint = theme.accent)
+                        }
                     }
                 }
             }
         }
 
         Surface(
-            color = NexusUi.Panel,
-            shape = RoundedCornerShape(22.dp),
+            color = NexusUi.Panel.copy(alpha = .94f),
+            shape = RoundedCornerShape(NexusUi.cardRadius.dp),
             border = BorderStroke(1.dp, NexusUi.Border),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -187,14 +221,14 @@ fun NexusSettings() {
         stores.forEachIndexed { index, store ->
             var enabled by remember(store) { mutableStateOf(prefs.getBoolean("store_$store", true)) }
             Surface(
-                color = NexusUi.Panel,
-                shape = RoundedCornerShape(18.dp),
+                color = NexusUi.Panel.copy(alpha = .94f),
+                shape = RoundedCornerShape(NexusUi.cardRadius.dp),
                 border = BorderStroke(1.dp, NexusUi.Border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        Modifier.size(36.dp).background(NexusUi.Accent.copy(alpha = .10f), RoundedCornerShape(11.dp)),
+                        Modifier.size(36.dp).background(NexusUi.Accent.copy(alpha = .10f), RoundedCornerShape(NexusUi.cardRadius.dp)),
                         contentAlignment = Alignment.Center
                     ) { Text(store.take(1), color = NexusUi.Accent, fontWeight = FontWeight.Black) }
                     Spacer(Modifier.width(10.dp))
@@ -214,7 +248,7 @@ fun NexusSettings() {
             }
         }
 
-        Surface(color=NexusUi.Panel,shape=RoundedCornerShape(18.dp),border=BorderStroke(1.dp,NexusUi.Border),modifier=Modifier.fillMaxWidth()) {
+        Surface(color=NexusUi.Panel.copy(alpha=.94f),shape=RoundedCornerShape(NexusUi.cardRadius.dp),border=BorderStroke(1.dp,NexusUi.Border),modifier=Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
                 Text("SEGURANÇA DO ANDROID",color=NexusUi.Text,fontWeight=FontWeight.Bold)
                 Spacer(Modifier.height(3.dp))
