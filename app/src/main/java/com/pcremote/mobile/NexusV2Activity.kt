@@ -7,6 +7,8 @@ import android.os.Bundle
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -70,10 +72,24 @@ private val v2Extra = listOf(
     V2Nav(7,"Configurações",Icons.Default.Settings)
 )
 
+private fun themeMotionMs(): Int = when (NexusUi.currentTheme) {
+    "Attack on Titan" -> 150
+    "Frutiger Aero" -> 420
+    "Dark Souls" -> 520
+    "Anime Prism" -> 260
+    "Naruto" -> 210
+    "Cyber Samurai" -> 170
+    "Sakura Night" -> 480
+    "Retro CRT" -> 90
+    "Arctic Glass" -> 360
+    else -> 240
+}
+
 @Composable
 private fun NexusV2App() {
     var page by remember { mutableIntStateOf(0) }
-    val activity = LocalContext.current as? Activity
+    val ctx = LocalContext.current
+    val activity = ctx as? Activity
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     LaunchedEffect(Unit) {
@@ -105,6 +121,7 @@ private fun NexusV2App() {
             Brush.verticalGradient(listOf(NexusUi.BackgroundSoft, NexusUi.Background, Color.Black))
         )
     ) {
+        NexusThemeBackdrop(Modifier.fillMaxSize())
         if (NexusFullscreen.active && page == 4) {
             SmoothLiveScreen()
         } else if (NexusFullscreen.active && page == 2) {
@@ -120,24 +137,35 @@ private fun NexusV2App() {
             Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(8.dp)) {
                 AdvancedGamepad()
                 IconButton(
-                    onClick={NexusFullscreen.active=true},
-                    modifier=Modifier.align(Alignment.TopEnd).size(42.dp).background(NexusUi.Panel,RoundedCornerShape(13.dp))
+                    onClick={NexusFullscreen.active=true;NexusEffects.play(ctx,NexusEffect.OPEN)},
+                    modifier=Modifier.align(Alignment.TopEnd).size(42.dp).background(NexusUi.Panel,RoundedCornerShape(NexusUi.cardRadius.dp))
                 ){Icon(Icons.Default.Fullscreen,null,tint=NexusUi.Accent)}
             }
         } else {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                V2Header { page = 7 }
+                V2Header {
+                    NexusEffects.play(ctx, NexusEffect.TAP)
+                    page = 7
+                }
                 Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp)) {
-                    V2Page(page) { page = it }
+                    Crossfade(targetState = page, animationSpec = tween(themeMotionMs()), label = "themePage") { targetPage ->
+                        V2Page(targetPage) {
+                            NexusEffects.play(ctx, NexusEffect.TAP)
+                            page = it
+                        }
+                    }
                     if (page == 2 || page == 4) {
                         IconButton(
-                            onClick = { NexusFullscreen.active = true },
+                            onClick = { NexusFullscreen.active = true; NexusEffects.play(ctx,NexusEffect.OPEN) },
                             modifier = Modifier.align(Alignment.TopEnd).padding(top=3.dp).size(40.dp)
-                                .background(NexusUi.Panel,RoundedCornerShape(13.dp))
+                                .background(NexusUi.Panel,RoundedCornerShape(NexusUi.cardRadius.dp))
                         ) { Icon(Icons.Default.Fullscreen,"Tela cheia",tint=NexusUi.Accent) }
                     }
                 }
-                V2BottomNav(page) { page = it }
+                V2BottomNav(page) {
+                    NexusEffects.play(ctx, NexusEffect.TICK)
+                    page = it
+                }
             }
         }
     }
@@ -162,7 +190,7 @@ private fun V2Page(page:Int,go:(Int)->Unit){
 @Composable
 private fun V2Header(settings:()->Unit){
     Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=9.dp),verticalAlignment=Alignment.CenterVertically){
-        Box(Modifier.size(44.dp).background(Brush.linearGradient(listOf(NexusUi.AccentStrong,NexusUi.Violet)),RoundedCornerShape(14.dp)),contentAlignment=Alignment.Center){Text("N",color=Color.White,fontWeight=FontWeight.Black,fontSize=20.sp)}
+        Box(Modifier.size(44.dp).background(Brush.linearGradient(listOf(NexusUi.AccentStrong,NexusUi.Violet)),RoundedCornerShape(NexusUi.cardRadius.dp)),contentAlignment=Alignment.Center){Text("N",color=Color.White,fontWeight=FontWeight.Black,fontSize=20.sp)}
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)){
             Text("Meu PC",color=NexusUi.Text,fontWeight=FontWeight.Black,fontSize=19.sp)
@@ -171,19 +199,19 @@ private fun V2Header(settings:()->Unit){
                 Text(if(Api.connected)"Conectado • ${Api.host}" else "Procurando PC…",color=if(Api.connected)NexusUi.Success else NexusUi.Muted,fontSize=10.sp)
             }
         }
-        IconButton(onClick=settings,modifier=Modifier.size(44.dp).background(NexusUi.PanelRaised,RoundedCornerShape(15.dp))){Icon(Icons.Default.Settings,"Configurações",tint=NexusUi.Text)}
+        IconButton(onClick=settings,modifier=Modifier.size(44.dp).background(NexusUi.PanelRaised,RoundedCornerShape(NexusUi.cardRadius.dp))){Icon(Icons.Default.Settings,"Configurações",tint=NexusUi.Text)}
     }
 }
 
 @Composable
 private fun V2BottomNav(selected:Int,setPage:(Int)->Unit){
     var more by remember{mutableStateOf(false)}
-    Surface(color=NexusUi.Panel,border=BorderStroke(1.dp,NexusUi.Border),shadowElevation=18.dp){
+    Surface(color=NexusUi.Panel.copy(alpha=.94f),border=BorderStroke(1.dp,NexusUi.Border),shadowElevation=18.dp){
         Row(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=5.dp)){
             v2Primary.forEach{item->V2NavItem(item,selected==item.page,Modifier.weight(1f)){setPage(item.page)}}
             Box(Modifier.weight(1f)){
                 V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(3,4,6,7,8),Modifier.fillMaxWidth()){more=true}
-                DropdownMenu(expanded=more,onDismissRequest={more=false},containerColor=NexusUi.PanelRaised){
+                DropdownMenu(expanded=more,onDismissRequest={more=false},containerColor=NexusUi.PanelRaised,shape=RoundedCornerShape(NexusUi.cardRadius.dp)){
                     v2Extra.forEach{item->DropdownMenuItem(text={Text(item.label,color=NexusUi.Text)},leadingIcon={Icon(item.icon,null,tint=if(selected==item.page)NexusUi.Accent else NexusUi.Muted)},onClick={more=false;setPage(item.page)})}
                 }
             }
@@ -193,8 +221,9 @@ private fun V2BottomNav(selected:Int,setPage:(Int)->Unit){
 
 @Composable
 private fun V2NavItem(item:V2Nav,active:Boolean,modifier:Modifier,onClick:()->Unit){
+    val scale = if(active) 1f else .96f
     Column(modifier.height(58.dp).clickable(onClick=onClick),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
-        Box(Modifier.size(32.dp).background(if(active)NexusUi.Accent.copy(alpha=.14f) else Color.Transparent,RoundedCornerShape(11.dp)),contentAlignment=Alignment.Center){Icon(item.icon,item.label,tint=if(active)NexusUi.Accent else NexusUi.Muted,modifier=Modifier.size(20.dp))}
+        Box(Modifier.size(32.dp).background(if(active)NexusUi.Accent.copy(alpha=.14f) else Color.Transparent,RoundedCornerShape(NexusUi.cardRadius.dp)).padding((1f-scale).dp),contentAlignment=Alignment.Center){Icon(item.icon,item.label,tint=if(active)NexusUi.Accent else NexusUi.Muted,modifier=Modifier.size(20.dp))}
         Spacer(Modifier.height(2.dp));Text(item.label,color=if(active)NexusUi.Text else NexusUi.Muted,fontSize=8.sp,fontWeight=if(active)FontWeight.Bold else FontWeight.Medium)
     }
 }
@@ -203,6 +232,7 @@ private data class V2Action(val title:String,val icon:ImageVector,val page:Int,v
 
 @Composable
 private fun V2Home(go:(Int)->Unit){
+    val ctx=LocalContext.current
     val scope=rememberCoroutineScope()
     var volume by remember{mutableFloatStateOf(70f)}
     var playing by remember{mutableStateOf(false)}
@@ -210,11 +240,11 @@ private fun V2Home(go:(Int)->Unit){
 
     if(power!=null){
         val action=power!!
-        AlertDialog(onDismissRequest={power=null},title={Text(when(action){"shutdown"->"Desligar PC?";"restart"->"Reiniciar PC?";else->"Suspender PC?"})},text={Text("O comando será enviado imediatamente.")},confirmButton={Button(onClick={scope.launch(Dispatchers.IO){Api.post("/power",action)};power=null}){Text("CONFIRMAR")}},dismissButton={TextButton(onClick={power=null}){Text("CANCELAR")}})
+        AlertDialog(onDismissRequest={power=null},title={Text(when(action){"shutdown"->"Desligar PC?";"restart"->"Reiniciar PC?";else->"Suspender PC?"})},text={Text("O comando será enviado imediatamente.")},confirmButton={Button(onClick={scope.launch(Dispatchers.IO){Api.post("/power",action)};NexusEffects.play(ctx,NexusEffect.SELECT);power=null}){Text("CONFIRMAR")}},dismissButton={TextButton(onClick={power=null}){Text("CANCELAR")}})
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-        Surface(color=NexusUi.Panel,shape=RoundedCornerShape(22.dp),border=BorderStroke(1.dp,NexusUi.Border)){
+        Surface(color=NexusUi.Panel.copy(alpha=.94f),shape=RoundedCornerShape(NexusUi.cardRadius.dp),border=BorderStroke(1.dp,NexusUi.Border)){
             Column(Modifier.padding(14.dp)){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Box(Modifier.size(44.dp).background(NexusUi.PanelRaised,CircleShape),contentAlignment=Alignment.Center){Icon(Icons.Default.VolumeUp,null,tint=NexusUi.Text)}
@@ -222,9 +252,9 @@ private fun V2Home(go:(Int)->Unit){
                 }
                 Slider(value=volume,onValueChange={v->val old=volume;volume=v;if(kotlin.math.abs(v-old)>=2f){scope.launch(Dispatchers.IO){Api.post("/key",if(v>old)"VOLUME_UP" else "VOLUME_DOWN")}}},valueRange=0f..100f,colors=SliderDefaults.colors(thumbColor=NexusUi.Text,activeTrackColor=NexusUi.Accent,inactiveTrackColor=NexusUi.Border))
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                    V2MediaButton(Icons.Default.SkipPrevious,Modifier.weight(1f)){scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_PREV")}}
-                    V2MediaButton(if(playing)Icons.Default.Pause else Icons.Default.PlayArrow,Modifier.weight(1f)){playing=!playing;scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_PLAY")}}
-                    V2MediaButton(Icons.Default.SkipNext,Modifier.weight(1f)){scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_NEXT")}}
+                    V2MediaButton(Icons.Default.SkipPrevious,Modifier.weight(1f)){NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_PREV")}}
+                    V2MediaButton(if(playing)Icons.Default.Pause else Icons.Default.PlayArrow,Modifier.weight(1f)){playing=!playing;NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_PLAY")}}
+                    V2MediaButton(Icons.Default.SkipNext,Modifier.weight(1f)){NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_NEXT")}}
                 }
             }
         }
@@ -233,7 +263,7 @@ private fun V2Home(go:(Int)->Unit){
             V2Action("Mouse",Icons.Default.Mouse,5,NexusUi.Accent),V2Action("Teclado",Icons.Default.Keyboard,6,NexusUi.Violet),V2Action("Controle",Icons.Default.SportsEsports,2,NexusUi.AccentStrong),
             V2Action("Tela ao vivo",Icons.Default.DesktopWindows,4,NexusUi.Accent),V2Action("Apps",Icons.Default.Apps,1,NexusUi.Violet),V2Action("Arquivos",Icons.Default.Folder,3,NexusUi.AccentStrong)
         )
-        actions.chunked(3).forEach{row->Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){row.forEach{item->V2Tile(item.title,item.icon,item.accent,Modifier.weight(1f)){go(item.page)}}}}
+        actions.chunked(3).forEach{row->Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){row.forEach{item->V2Tile(item.title,item.icon,item.accent,Modifier.weight(1f)){NexusEffects.play(ctx,NexusEffect.TAP);go(item.page)}}}}
         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){
             V2Tile("Desligar",Icons.Default.PowerSettingsNew,Color(0xFFFF5252),Modifier.weight(1f)){power="shutdown"}
             V2Tile("Reiniciar",Icons.Default.RestartAlt,NexusUi.AccentStrong,Modifier.weight(1f)){power="restart"}
@@ -243,11 +273,11 @@ private fun V2Home(go:(Int)->Unit){
 }
 
 @Composable
-private fun V2MediaButton(icon:ImageVector,modifier:Modifier,onClick:()->Unit){Surface(color=NexusUi.PanelRaised,shape=RoundedCornerShape(14.dp),modifier=modifier.height(50.dp).clickable(onClick=onClick)){Box(contentAlignment=Alignment.Center){Icon(icon,null,tint=NexusUi.Text)}}}
+private fun V2MediaButton(icon:ImageVector,modifier:Modifier,onClick:()->Unit){Surface(color=NexusUi.PanelRaised,shape=RoundedCornerShape(NexusUi.cardRadius.dp),modifier=modifier.height(50.dp).clickable(onClick=onClick)){Box(contentAlignment=Alignment.Center){Icon(icon,null,tint=NexusUi.Text)}}}
 
 @Composable
 private fun V2Tile(title:String,icon:ImageVector,accent:Color,modifier:Modifier,onClick:()->Unit){
-    Surface(color=NexusUi.Panel,shape=RoundedCornerShape(18.dp),border=BorderStroke(1.dp,NexusUi.Border),modifier=modifier.aspectRatio(1f).clickable(onClick=onClick)){
+    Surface(color=NexusUi.Panel.copy(alpha=.94f),shape=RoundedCornerShape(NexusUi.cardRadius.dp),border=BorderStroke(1.dp,NexusUi.Border),modifier=modifier.aspectRatio(1f).clickable(onClick=onClick)){
         Column(Modifier.fillMaxSize(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Icon(icon,title,tint=accent,modifier=Modifier.size(29.dp));Spacer(Modifier.height(9.dp));Text(title,color=NexusUi.Text,fontSize=10.sp,fontWeight=FontWeight.SemiBold,textAlign=TextAlign.Center)}
     }
 }
