@@ -3,13 +3,16 @@ package com.pcremote.mobile
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
@@ -40,14 +43,22 @@ fun NexusSettings() {
     var stores by remember { mutableStateOf(loadStoreOrder(ctx)) }
     var manualIp by remember { mutableStateOf(prefs.getString("manual_ip", Api.host).orEmpty()) }
     var manualResult by remember { mutableStateOf("") }
+    var themeName by remember { mutableStateOf(prefs.getString("theme", "NEXUS Neon") ?: "NEXUS Neon") }
 
-    fun persist() { prefs.edit().putString("store_order", stores.joinToString("|")).apply() }
+    LaunchedEffect(Unit) { NexusUi.applyTheme(themeName) }
+
+    fun persistStores() { prefs.edit().putString("store_order", stores.joinToString("|")).apply() }
+    fun selectTheme(name: String) {
+        themeName = name
+        prefs.edit().putString("theme", name).apply()
+        NexusUi.applyTheme(name)
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Title("Configurações", "Conexão, biblioteca e preferências do NEXUS")
+        Title("Configurações", "Conexão, biblioteca, visual e preferências do NEXUS")
 
         Surface(
             color = NexusUi.Panel,
@@ -112,7 +123,7 @@ fun NexusSettings() {
                 }
 
                 Text(
-                    "Celular: ${Discovery.networkSummary()}\nMétodo atual: ${Api.connectionMethod}\nBusca: ${Discovery.lastMethod}\nPC no cabo + celular no Wi‑Fi funciona normalmente quando os dois estão na mesma rede/roteador.",
+                    "Celular: ${Discovery.networkSummary()}\nMétodo atual: ${Api.connectionMethod}\nBusca: ${Discovery.lastMethod}\nPC no cabo + celular no Wi‑Fi funciona quando os dois estão no mesmo roteador/rede local.",
                     color = NexusUi.Muted,
                     style = MaterialTheme.typography.labelSmall
                 )
@@ -125,10 +136,51 @@ fun NexusSettings() {
             border = BorderStroke(1.dp, NexusUi.Border),
             modifier = Modifier.fillMaxWidth()
         ) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Palette, null, tint = NexusUi.Accent)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("TEMAS", color = NexusUi.Text, fontWeight = FontWeight.Black)
+                        Text("10 estilos completos para mudar a personalidade do app", color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                NexusThemes.chunked(2).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { theme ->
+                            val selected = themeName == theme.name
+                            Surface(
+                                color = if (selected) theme.panelRaised else NexusUi.BackgroundSoft,
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) theme.accent else NexusUi.Border),
+                                modifier = Modifier.weight(1f).height(66.dp).clickable { selectTheme(theme.name) }
+                            ) {
+                                Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(34.dp).background(theme.accent, CircleShape))
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(theme.name, color = NexusUi.Text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 2)
+                                        Text(if (selected) "ATIVO" else "USAR", color = if (selected) theme.accent else NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+
+        Surface(
+            color = NexusUi.Panel,
+            shape = RoundedCornerShape(22.dp),
+            border = BorderStroke(1.dp, NexusUi.Border),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Column(Modifier.padding(14.dp)) {
                 Text("FONTES DA BIBLIOTECA", color = NexusUi.Accent, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
                 Spacer(Modifier.height(4.dp))
-                Text("'Alll' representa a pasta Desktop\\Alll do PC. Ela é usada só para descobrir apps/jogos; arquivos recebidos continuam indo para Downloads.", color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+                Text("'Alll' representa Desktop\\Alll no PC e serve somente como fonte extra da Biblioteca. Arquivos recebidos continuam indo para Downloads.", color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -148,12 +200,12 @@ fun NexusSettings() {
                     Spacer(Modifier.width(10.dp))
                     Text(store, Modifier.weight(1f), color = NexusUi.Text, fontWeight = FontWeight.SemiBold)
                     IconButton(onClick = {
-                        if(index>0){stores=stores.toMutableList().also{java.util.Collections.swap(it,index,index-1)};persist()}
+                        if(index>0){stores=stores.toMutableList().also{java.util.Collections.swap(it,index,index-1)};persistStores()}
                     },enabled=index>0,modifier=Modifier.size(34.dp)) {
                         Icon(Icons.Default.KeyboardArrowUp,null,tint=if(index>0)NexusUi.Text else NexusUi.Border)
                     }
                     IconButton(onClick = {
-                        if(index<stores.lastIndex){stores=stores.toMutableList().also{java.util.Collections.swap(it,index,index+1)};persist()}
+                        if(index<stores.lastIndex){stores=stores.toMutableList().also{java.util.Collections.swap(it,index,index+1)};persistStores()}
                     },enabled=index<stores.lastIndex,modifier=Modifier.size(34.dp)) {
                         Icon(Icons.Default.KeyboardArrowDown,null,tint=if(index<stores.lastIndex)NexusUi.Text else NexusUi.Border)
                     }
@@ -164,9 +216,9 @@ fun NexusSettings() {
 
         Surface(color=NexusUi.Panel,shape=RoundedCornerShape(18.dp),border=BorderStroke(1.dp,NexusUi.Border),modifier=Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
-                Text("VISUAL",color=NexusUi.Text,fontWeight=FontWeight.Bold)
+                Text("SEGURANÇA DO ANDROID",color=NexusUi.Text,fontWeight=FontWeight.Bold)
                 Spacer(Modifier.height(3.dp))
-                Text("Tema escuro, contraste alto e navegação compacta para não cortar conteúdo em telas pequenas.",color=NexusUi.Muted,style=MaterialTheme.typography.bodySmall)
+                Text("O NEXUS não tenta desativar o Play Protect. As permissões especiais ficam limitadas ao Drop Edge e só são usadas quando você ativa essa função.",color=NexusUi.Muted,style=MaterialTheme.typography.bodySmall)
             }
         }
         Spacer(Modifier.height(4.dp))
