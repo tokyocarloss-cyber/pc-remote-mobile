@@ -1,4 +1,4 @@
-import ctypes, io, os, shutil, subprocess, sys, threading, time, urllib.request
+import ctypes, io, os, shutil, struct, subprocess, sys, threading, time, urllib.request, urllib.parse
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 try:
@@ -24,8 +24,16 @@ UDP_RULE='NEXUS PC Remote UDP v2'
 RECEIVED_DIR=Path.home()/'Downloads';RECEIVED_DIR.mkdir(parents=True,exist_ok=True)
 LIBRARY_DIR=Path.home()/'Desktop'/'Alll'
 _ORIGINAL_APPS_CATALOG=servermod.apps_catalog
+_ORIGINAL_APP_ICON=servermod.app_icon
 FRAME_BYTES=b''
 FRAME_LOCK=threading.Lock()
+
+
+def hidden_startup():
+ try:
+  si=subprocess.STARTUPINFO();si.dwFlags|=subprocess.STARTF_USESHOWWINDOW;si.wShowWindow=0;return si
+ except Exception:return None
+
 
 def apps_catalog_with_custom_folder():
  items=_ORIGINAL_APPS_CATALOG();seen={str(x.get('name','')).casefold() for x in items}
@@ -37,18 +45,60 @@ def apps_catalog_with_custom_folder():
     name=p.stem.strip()
     if not name or name.casefold() in seen:continue
     items.append({'name':name,'store':'Alll'})
-    servermod.APP_INDEX[name]={'shortcut':str(p),'launch_cmd':None,'steam_id':None,'icon_hint':str(p) if p.suffix.lower()=='.exe' else None,'store':'Alll'}
+    servermod.APP_INDEX[name]={'shortcut':str(p),'launch_cmd':None,'steam_id':None,'icon_hint':str(p),'store':'Alll'}
     seen.add(name.casefold())
  except Exception:pass
  return items
 
+
+def better_app_icon(name):
+ if name not in servermod.APP_INDEX:apps_catalog_with_custom_folder()
+ item=servermod.APP_INDEX.get(name)
+ if not item:return None,None
+ cache=servermod.ICON_DIR/(servermod.hashlib.sha1(name.encode('utf-8')).hexdigest()+'.png')
+ if cache.exists() and cache.stat().st_size>100:return cache.read_bytes(),'image/png'
+ candidates=[]
+ hint=item.get('icon_hint')
+ shortcut=item.get('shortcut')
+ if hint:candidates.append(str(hint))
+ if shortcut:
+  try:
+   target=servermod.resolve_shortcut(shortcut)
+   if target:candidates.append(target)
+  except Exception:pass
+  candidates.append(str(shortcut))
+ for c in candidates:
+  try:
+   p=Path(c)
+   if p.is_file() and p.suffix.lower() in ('.png','.jpg','.jpeg','.webp'):
+    typ='image/png' if p.suffix.lower()=='.png' else 'image/jpeg'
+    return p.read_bytes(),typ
+  except Exception:pass
+ for c in candidates:
+  try:
+   p=Path(c)
+   if not p.exists():continue
+   src=str(p).replace("'","''");dst=str(cache).replace("'","''")
+   ps=("Add-Type -AssemblyName System.Drawing;"
+       "$i=[System.Drawing.Icon]::ExtractAssociatedIcon('"+src+"');"
+       "if($i){$b=$i.ToBitmap();$b.Save('"+dst+"',[System.Drawing.Imaging.ImageFormat]::Png);$b.Dispose();$i.Dispose()}")
+   subprocess.run(['powershell.exe','-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-Command',ps],
+                  timeout=5,creationflags=CREATE_NO_WINDOW,startupinfo=hidden_startup(),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+   if cache.exists() and cache.stat().st_size>100:return cache.read_bytes(),'image/png'
+  except Exception:pass
+ try:return _ORIGINAL_APP_ICON(name)
+ except Exception:return None,None
+
 servermod.apps_catalog=apps_catalog_with_custom_folder
+servermod.app_icon=better_app_icon
+
 
 def icon_image():
  im=Image.new('RGBA',(64,64),(0,0,0,0));d=ImageDraw.Draw(im)
  d.rounded_rectangle((5,5,59,59),14,fill=(7,13,20,255),outline=(55,207,255,255),width=3)
- d.line((19,45,19,19,45,45,45,19),fill=(76,222,255,255),width=7,joint='curve')
+ d.polygon([(17,45),(17,19),(27,19),(42,39),(42,19),(48,19),(48,45),(38,45),(23,26),(23,45)],fill=(76,222,255,255))
  return im
+
 
 def message(title,text):ctypes.windll.user32.MessageBoxW(0,text,title,0x40)
 
@@ -73,8 +123,8 @@ def local_server_ok():
 
 def firewall_ok():
  try:
-  a=subprocess.run(['netsh','advfirewall','firewall','show','rule',f'name={TCP_RULE}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=CREATE_NO_WINDOW)
-  b=subprocess.run(['netsh','advfirewall','firewall','show','rule',f'name={UDP_RULE}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=CREATE_NO_WINDOW)
+  a=subprocess.run(['netsh','advfirewall','firewall','show','rule',f'name={TCP_RULE}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=CREATE_NO_WINDOW,startupinfo=hidden_startup())
+  b=subprocess.run(['netsh','advfirewall','firewall','show','rule',f'name={UDP_RULE}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=CREATE_NO_WINDOW,startupinfo=hidden_startup())
   return a.returncode==0 and b.returncode==0
  except Exception:return False
 
@@ -98,9 +148,10 @@ def install_gamepad_driver(icon=None,item=None):
   base=Path(vgamepad.__file__).resolve().parent;arch='x64' if sys.maxsize>2**32 else 'x86'
   msi=base/'win'/'vigem'/'install'/arch/('ViGEmBusSetup_'+arch+'.msi')
   if not msi.exists():raise FileNotFoundError(str(msi))
-  subprocess.Popen(['msiexec','/i',str(msi)],creationflags=CREATE_NO_WINDOW)
+  subprocess.Popen(['msiexec','/i',str(msi)],creationflags=CREATE_NO_WINDOW,startupinfo=hidden_startup())
   message('NEXUS PC Remote','Instalador do controle virtual aberto.\n\nConclua a instalação e reinicie o NEXUS PC Remote.')
  except Exception:message('NEXUS PC Remote','O controle virtual é opcional e ainda não está instalado. O restante do NEXUS continua funcionando normalmente.')
+
 
 def capture_loop():
  global FRAME_BYTES
@@ -129,6 +180,79 @@ def fast_screenshot():
  try:return servermod.screenshot_original()
  except Exception:return b''
 
+
+def send_hotkey(name):
+ u=ctypes.windll.user32
+ combos={
+  'ALT_F4':([0x12],0x73),
+  'ALT_TAB':([0x12],0x09),
+  'WIN_D':([0x5B],0x44),
+  'SNIP':([0x5B,0x10],0x53),
+  'CTRL_SHIFT_ESC':([0x11,0x10],0x1B),
+  'ESC':([],0x1B),
+  'ENTER':([],0x0D)
+ }
+ mods,key=combos.get(name,([],0))
+ if not key:return False
+ for m in mods:u.keybd_event(m,0,0,0)
+ u.keybd_event(key,0,0,0);u.keybd_event(key,0,2,0)
+ for m in reversed(mods):u.keybd_event(m,0,2,0)
+ return True
+
+
+def absolute_mouse(raw):
+ try:
+  x,y=[float(v) for v in raw.decode().split(',',1)]
+  sw=ctypes.windll.user32.GetSystemMetrics(0);sh=ctypes.windll.user32.GetSystemMetrics(1)
+  ctypes.windll.user32.SetCursorPos(int(max(0,min(1,x))*(sw-1)),int(max(0,min(1,y))*(sh-1)))
+  return True
+ except Exception:return False
+
+
+def zoom_wheel(raw):
+ try:delta=int(float(raw.decode()));delta=max(-1200,min(1200,delta))
+ except Exception:return False
+ u=ctypes.windll.user32;u.keybd_event(0x11,0,0,0);u.mouse_event(0x0800,0,0,delta,0);u.keybd_event(0x11,0,2,0);return True
+
+
+class EnhancedH(H):
+ def do_GET(self):
+  parsed=urllib.parse.urlparse(self.path)
+  if parsed.path!='/stream.raw':return super().do_GET()
+  q=urllib.parse.parse_qs(parsed.query)
+  try:
+   servermod.SCREEN_WIDTH=max(640,min(2560,int(q.get('w',[servermod.SCREEN_WIDTH])[0])))
+   servermod.SCREEN_HEIGHT=max(360,min(1440,int(q.get('h',[servermod.SCREEN_HEIGHT])[0])))
+   servermod.SCREEN_QUALITY=max(35,min(90,int(q.get('q',[servermod.SCREEN_QUALITY])[0])))
+   servermod.SCREEN_TARGET_FPS=max(15,min(120,int(q.get('fps',[servermod.SCREEN_TARGET_FPS])[0])))
+  except Exception:pass
+  try:servermod.mark_seen(self.client_address[0])
+  except Exception:pass
+  self.send_response(200);self.send_header('Content-Type','application/x-nexus-jpeg-stream');self.send_header('Cache-Control','no-cache, no-store');self.send_header('Connection','close');self.end_headers();self.close_connection=True
+  last=b''
+  delay=max(.001,1.0/max(15,min(120,int(servermod.SCREEN_TARGET_FPS))))
+  try:
+   while True:
+    with FRAME_LOCK:data=FRAME_BYTES
+    if data and data is not last:
+     self.wfile.write(struct.pack('>I',len(data)));self.wfile.write(data);self.wfile.flush();last=data
+    time.sleep(delay)
+  except Exception:return
+
+ def do_POST(self):
+  p=urllib.parse.urlparse(self.path).path
+  if p in ('/mouse-abs','/hotkey','/zoom'):
+   try:raw=self.body()
+   except Exception:return self.sendb(b'bad',code=400)
+   try:servermod.mark_seen(self.client_address[0])
+   except Exception:pass
+   if p=='/mouse-abs':ok=absolute_mouse(raw)
+   elif p=='/hotkey':ok=send_hotkey(raw.decode(errors='ignore').strip().upper())
+   else:ok=zoom_wheel(raw)
+   return self.sendb(b'OK' if ok else b'FAIL',code=200 if ok else 400)
+  return super().do_POST()
+
+
 def notify_received(path):
  try:
   size=path.stat().st_size;txt=f'{path.name} • {max(1,size//1024)} KB'
@@ -143,7 +267,7 @@ def cleanup_old_transfer_stubs():
 
 def run_server():
  global server,server_error
- try:server=ThreadingHTTPServer(('0.0.0.0',PORT),H);server.serve_forever()
+ try:server=ThreadingHTTPServer(('0.0.0.0',PORT),EnhancedH);server.serve_forever()
  except OSError as e:
   if local_server_ok():server_error='Servidor NEXUS já estava ativo'
   else:server_error='Porta 8765 indisponível: '+str(e)
