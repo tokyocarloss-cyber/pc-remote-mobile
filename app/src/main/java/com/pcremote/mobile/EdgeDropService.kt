@@ -5,6 +5,7 @@ import android.content.*
 import android.graphics.PixelFormat
 import android.net.Uri
 import android.os.IBinder
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.*
 import android.widget.TextView
@@ -50,9 +51,14 @@ class EdgeDropService: Service() {
    }
   }
  }
+ private fun displayName(uri:Uri):String=try{
+  contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use{c->if(c.moveToFirst())c.getString(0) else null}
+   ?:uri.lastPathSegment?.substringAfterLast('/')?:"drop-file"
+ }catch(_:Exception){uri.lastPathSegment?.substringAfterLast('/')?:"drop-file"}
  private fun sendUri(uri:Uri){try{
   val bytes=contentResolver.openInputStream(uri)?.use{it.readBytes()}?:return
-  val name=uri.lastPathSegment?.substringAfterLast('/')?.takeLast(100)?:"drop-file"
+  if(bytes.isEmpty())return
+  val name=displayName(uri).takeLast(180)
   RemoteClient.post("/upload/"+URLEncoder.encode(name,"UTF-8"),bytes)
  }catch(_:Exception){}}
  override fun onDestroy(){target?.let{runCatching{wm?.removeView(it)}};super.onDestroy()}
