@@ -53,7 +53,7 @@ def firewall_ok():
   return a.returncode==0 and b.returncode==0
  except Exception:return False
 
-def repair_firewall(icon=None,item=None,quiet=False):
+def repair_firewall(quiet=False):
  try:
   # profile=any is intentional: Ethernet is often classified as Public while the phone is on Wi-Fi.
   cmd=(f'/c netsh advfirewall firewall delete rule name="{TCP_RULE}" >nul 2>&1 '
@@ -65,6 +65,9 @@ def repair_firewall(icon=None,item=None,quiet=False):
   elif not quiet:message('NEXUS PC Remote','Autorize a janela do Windows. A regra será liberada para redes Privadas e Públicas, inclusive PC no cabo + celular no Wi‑Fi.')
  except Exception as e:
   if not quiet:message('NEXUS PC Remote','Falha ao configurar o Firewall:\n'+str(e))
+
+def repair_firewall_action(icon,item):
+ repair_firewall(False)
 
 def install_gamepad_driver(icon=None,item=None):
  try:
@@ -84,7 +87,6 @@ def run_server():
   server=ThreadingHTTPServer(('0.0.0.0',PORT),H)
   server.serve_forever()
  except OSError as e:
-  # If an older NEXUS instance already owns the port, reuse it instead of dying silently.
   if local_server_ok():server_error='Servidor NEXUS já estava ativo'
   else:server_error='Porta 8765 indisponível: '+str(e)
  except Exception as e:server_error=str(e)
@@ -95,7 +97,7 @@ def make_menu():
   pystray.MenuItem(lambda _:f'NEXUS • {local_ip()}:{PORT}',None,enabled=False),
   pystray.MenuItem(lambda _:'Servidor: ativo' if local_server_ok() else ('Servidor: '+server_error if server_error else 'Servidor: iniciando'),None,enabled=False),
   pystray.MenuItem(lambda _:'Celular: conectado' if phone_connected() else 'Celular: aguardando',None,enabled=False),
-  pystray.MenuItem('Liberar conexão no Firewall',repair_firewall),
+  pystray.MenuItem('Liberar conexão no Firewall',repair_firewall_action),
   pystray.MenuItem(pad,install_gamepad_driver,enabled=GAMEPAD is None),
   pystray.MenuItem('Abrir transferências',open_folder),
   pystray.MenuItem('Sair',stop))
@@ -116,7 +118,7 @@ def start_services():
 if __name__=='__main__':
  start_services()
  start_tray()
- if not firewall_ok():threading.Timer(1.0,lambda:repair_firewall(quiet=True)).start()
+ if not firewall_ok():threading.Timer(1.0,lambda:repair_firewall(True)).start()
  edge=DropEdge()
  try:edge.run()
  finally:
