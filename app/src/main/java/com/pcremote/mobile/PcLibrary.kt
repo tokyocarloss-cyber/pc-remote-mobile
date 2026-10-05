@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import kotlin.math.PI
 import kotlin.math.cos
@@ -39,21 +41,39 @@ fun PcLibrary() {
     val scope = rememberCoroutineScope()
     var apps by remember { mutableStateOf<List<PcApp>>(emptyList()) }
     var search by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf("") }
+
+    suspend fun refreshLibrary() {
+        if (Api.host.isBlank()) {
+            loadError = "Aguardando o PC ser encontrado"
+            return
+        }
+        loading = true
+        loadError = ""
+        val raw = withContext(Dispatchers.IO) { RemoteClient.get("/apps") }
+        if (raw == null) {
+            loadError = "O PC não respondeu. Toque em atualizar para tentar novamente."
+            loading = false
+            return
+        }
+        try {
+            val array = JSONArray(String(raw))
+            apps = (0 until array.length()).map { i ->
+                val v = array.get(i)
+                if (v is org.json.JSONObject) {
+                    PcApp(v.optString("name"), v.optString("store", "Outros"))
+                } else PcApp(v.toString())
+            }.filter { it.name.isNotBlank() }
+            loadError = if (apps.isEmpty()) "O PC respondeu, mas não retornou apps ou jogos." else ""
+        } catch (_: Exception) {
+            loadError = "Resposta da biblioteca inválida."
+        }
+        loading = false
+    }
 
     LaunchedEffect(Api.host, Api.connected) {
-        if (Api.connected) {
-            RemoteClient.get("/apps")?.let { raw ->
-                try {
-                    val array = JSONArray(String(raw))
-                    apps = (0 until array.length()).map { i ->
-                        val v = array.get(i)
-                        if (v is org.json.JSONObject) {
-                            PcApp(v.optString("name"), v.optString("store", "Outros"))
-                        } else PcApp(v.toString())
-                    }
-                } catch (_: Exception) { }
-            }
-        }
+        if (Api.host.isNotBlank()) refreshLibrary()
     }
 
     val order = loadStoreOrder(ctx)
@@ -66,7 +86,12 @@ fun PcLibrary() {
         .filter { search.isBlank() || it.name.contains(search, true) }
 
     Column(Modifier.fillMaxSize()) {
-        Title("Biblioteca", "Seus apps e jogos em um só lugar")
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { Title("Biblioteca", "Apps, jogos e atalhos do PC") }
+            IconButton(onClick = { scope.launch { refreshLibrary() } }) {
+                Icon(Icons.Default.Refresh, "Atualizar biblioteca", tint = NexusUi.Accent)
+            }
+        }
         Spacer(Modifier.height(12.dp))
 
         OutlinedTextField(
@@ -100,8 +125,9 @@ fun PcLibrary() {
         Spacer(Modifier.height(6.dp))
 
         when {
+            loading -> EmptyLibrary("Atualizando biblioteca do PC…", Modifier.weight(1f))
             apps.isEmpty() -> EmptyLibrary(
-                if (Api.connected) "Carregando biblioteca…" else "Conecte ao PC para carregar",
+                loadError.ifBlank { if (Api.host.isBlank()) "Conecte ao PC para carregar" else "Nenhum item retornado" },
                 Modifier.weight(1f)
             )
             filtered.isEmpty() -> EmptyLibrary("Nenhum item encontrado", Modifier.weight(1f))
@@ -200,7 +226,7 @@ private fun AppRow(app: PcApp, onClick: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(app.name, color = NexusUi.Text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(2.dp))
-                Text(app.store, color = NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
+                Text(if (app.store == "Alll") "Desktop / Alll" else app.store, color = NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
             }
             Text("ABRIR", color = NexusUi.Accent, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         }
