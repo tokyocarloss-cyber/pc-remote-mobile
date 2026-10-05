@@ -22,8 +22,6 @@ jobs:
           cache-dependency-path: windows/requirements.txt
       - name: Install build dependencies
         timeout-minutes: 5
-        env:
-          VGAMEPAD_SKIP_VIGEMBUS_INSTALL: "true"
         run: |
           python -m pip install --disable-pip-version-check --prefer-binary -r requirements.txt
           python -m pip install --disable-pip-version-check --prefer-binary pyinstaller
@@ -37,16 +35,16 @@ jobs:
           --collect-all tkinterdnd2
           --collect-all pystray
           --collect-all PIL
-          --collect-all vgamepad
           --hidden-import pystray._win32
           --hidden-import pystray._base
           companion.py
-      - name: Verify bundled tray runtime
+      - name: Verify bundled runtime
         shell: powershell
         run: |
           python -m PyInstaller.utils.cliutils.archive_viewer "dist\NEXUS PC Remote.exe" -l | Out-File -Encoding utf8 archive.txt
           if (-not (Select-String -Path archive.txt -Pattern "pystray" -Quiet)) { throw "pystray was not bundled into the EXE" }
           if (-not (Select-String -Path archive.txt -Pattern "PIL" -Quiet)) { throw "Pillow was not bundled into the EXE" }
+          if (-not (Select-String -Path archive.txt -Pattern "tkinterdnd2" -Quiet)) { throw "tkinterdnd2 was not bundled into the EXE" }
       - uses: actions/upload-artifact@v4
         with:
           name: NEXUS-PC-Remote-Windows
