@@ -32,7 +32,6 @@ import java.io.BufferedInputStream
 import java.io.DataInputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import kotlin.math.max
 
 private data class ScreenQuality(val name: String, val w: Int, val h: Int, val jpeg: Int)
 private val ScreenQualities = listOf(
@@ -53,11 +52,26 @@ fun SmoothLiveScreen() {
     var targetFps by remember { mutableIntStateOf(prefs.getInt("fps", 60).let { if (it in listOf(30,60,120)) it else 60 }) }
     var qualityIndex by remember { mutableIntStateOf(prefs.getInt("quality", 0).coerceIn(0, ScreenQualities.lastIndex)) }
     var streamError by remember { mutableStateOf("") }
+    var transport by remember { mutableStateOf("STREAM") }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var shelfOpen by remember { mutableStateOf(false) }
     val quality = ScreenQualities[qualityIndex]
 
+    fun registerFrame(bytes: ByteArray) {
+        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+        frame = bmp.asImageBitmap()
+        Api.connected = true
+        count++
+        val now = System.currentTimeMillis()
+        if (now - lastFpsAt >= 1000) {
+            actualFps = count
+            count = 0
+            lastFpsAt = now
+        }
+    }
+
     fun hotkey(name: String) = scope.launch(Dispatchers.IO) { Api.post("/hotkey", name) }
+
     fun clickAt(pos: Offset, double: Boolean = false) {
         val s = viewport
         if (s.width <= 0 || s.height <= 0) return
@@ -87,46 +101,77 @@ fun SmoothLiveScreen() {
         }
     }
 
-    LaunchedEffect(Api.host, targetFps, qualityIndex) {
-        if (Api.host.isBlank()) return@LaunchedEffect
-        while (isActive && Api.host.isNotBlank()) {
+    suspend fun rawStreamSession(): Boolean = withContext(Dispatchers.IO) {
+        var conn: HttpURLConnection? = null
+        try {
+            val path = "http://${Api.host}:8765/stream.raw?w=${quality.w}&h=${quality.h}&q=${quality.jpeg}&fps=$targetFps"
+            conn = (URL(path).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 1800
+                readTimeout = 2800
+                useCaches = false
+                setRequestProperty("Connection", "close")
+            }
+            if (conn.responseCode !in 200..299) return@withContext false
+            transport = "STREAM"
+            streamError = ""
+            DataInputStream(BufferedInputStream(conn.inputStream, 1024 * 1024)).use { input ->
+                while (currentCoroutineContext().isActive) {
+                    val length = input.readInt()
+                    if (length !in 512..20_000_000) return@withContext false
+                    val bytes = ByteArray(length)
+                    input.readFully(bytes)
+                    withContext(Dispatchers.Main) { registerFrame(bytes) }
+                }
+            }
+            true
+        } catch (_: Exception) {
+            false
+        } finally {
+            try { conn?.disconnect() } catch (_: Exception) {}
+        }
+    }
+
+    suspend fun fallbackBurst(durationMs: Long = 4500L) = withContext(Dispatchers.IO) {
+        transport = "COMPAT"
+        val started = System.currentTimeMillis()
+        while (currentCoroutineContext().isActive && System.currentTimeMillis() - started < durationMs && Api.host.isNotBlank()) {
             var conn: HttpURLConnection? = null
             try {
-                val path = "http://${Api.host}:8765/stream.raw?w=${quality.w}&h=${quality.h}&q=${quality.jpeg}&fps=$targetFps"
-                conn = (URL(path).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 1800
-                    readTimeout = 0
+                val url = "http://${Api.host}:8765/screen.jpg?w=${quality.w}&h=${quality.h}&q=${quality.jpeg}&fps=$targetFps&t=${System.nanoTime()}"
+                conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 1200
+                    readTimeout = 1800
                     useCaches = false
                     setRequestProperty("Connection", "close")
                 }
-                if (conn.responseCode !in 200..299) throw IllegalStateException("HTTP ${conn.responseCode}")
-                streamError = ""
-                DataInputStream(BufferedInputStream(conn.inputStream, 1024 * 1024)).use { input ->
-                    while (isActive) {
-                        val length = input.readInt()
-                        if (length !in 512..20_000_000) throw IllegalStateException("Quadro inválido")
-                        val bytes = ByteArray(length)
-                        input.readFully(bytes)
-                        val bmp = withContext(Dispatchers.Default) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
-                        if (bmp != null) {
-                            frame = bmp.asImageBitmap()
-                            Api.connected = true
-                            count++
-                            val now = System.currentTimeMillis()
-                            if (now - lastFpsAt >= 1000) {
-                                actualFps = count
-                                count = 0
-                                lastFpsAt = now
-                            }
-                        }
+                if (conn.responseCode in 200..299) {
+                    val bytes = conn.inputStream.use { it.readBytes() }
+                    if (bytes.isNotEmpty()) withContext(Dispatchers.Main) {
+                        registerFrame(bytes)
+                        streamError = ""
                     }
                 }
-            } catch (e: Exception) {
-                if (isActive) streamError = "Reconectando transmissão…"
-                delay(250)
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) { streamError = "Reconectando transmissão…" }
             } finally {
                 try { conn?.disconnect() } catch (_: Exception) {}
             }
+            delay((1000L / targetFps.coerceIn(15, 30)).coerceAtLeast(25L))
+        }
+    }
+
+    LaunchedEffect(Api.host, targetFps, qualityIndex) {
+        if (Api.host.isBlank()) return@LaunchedEffect
+        actualFps = 0
+        count = 0
+        while (isActive && Api.host.isNotBlank()) {
+            streamError = if (frame == null) "Conectando transmissão…" else ""
+            val rawOk = rawStreamSession()
+            if (!rawOk && isActive) {
+                streamError = if (frame == null) "Usando modo compatível…" else ""
+                fallbackBurst()
+            }
+            if (isActive) delay(120)
         }
     }
 
@@ -135,7 +180,7 @@ fun SmoothLiveScreen() {
             Title("Tela do PC", "Transmissão de baixa latência com toque")
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(30,60,120).forEach { value ->
+                listOf(30, 60, 120).forEach { value ->
                     StreamOption("$value FPS", targetFps == value, Modifier.weight(1f)) {
                         targetFps = value
                         prefs.edit().putInt("fps", value).apply()
@@ -177,12 +222,17 @@ fun SmoothLiveScreen() {
                 val image = frame
                 if (image != null) {
                     Image(bitmap = image, contentDescription = "Tela do PC", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                    if (streamError.isNotBlank()) {
+                        Surface(
+                            color = Color.Black.copy(alpha = .58f),
+                            shape = RoundedCornerShape(99.dp),
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
+                        ) { Text(streamError, color = NexusUi.Text, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall) }
+                    }
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.size(58.dp).background(NexusUi.PanelRaised, CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.DesktopWindows, null, tint = NexusUi.Muted, modifier = Modifier.size(27.dp))
-                        }
-                        Spacer(Modifier.height(10.dp))
+                        CircularProgressIndicator(color = NexusUi.Accent, strokeWidth = 3.dp, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(14.dp))
                         Text(if (Api.host.isNotBlank()) streamError.ifBlank { "Carregando primeira imagem…" } else "Aguardando conexão", color = NexusUi.Muted)
                     }
                 }
@@ -223,9 +273,14 @@ fun SmoothLiveScreen() {
             Surface(color = NexusUi.Panel, shape = RoundedCornerShape(15.dp), border = BorderStroke(1.dp, NexusUi.Border), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(7.dp).background(if (Api.connected) NexusUi.Success else NexusUi.Muted, CircleShape))
+                        Box(Modifier.size(7.dp).background(if (frame != null) NexusUi.Success else NexusUi.Muted, CircleShape))
                         Spacer(Modifier.width(7.dp))
-                        Text(if (Api.connected) "${quality.name.uppercase()} • TOUCH" else "OFFLINE", color = if (Api.connected) NexusUi.Success else NexusUi.Muted, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            if (frame != null) "${quality.name.uppercase()} • TOUCH • $transport" else "SEM VÍDEO",
+                            color = if (frame != null) NexusUi.Success else NexusUi.Muted,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
                     Text("$actualFps FPS real • alvo $targetFps", color = NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
                 }
