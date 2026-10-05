@@ -16,6 +16,15 @@ SCREEN_QUALITY=60
 SCREEN_TARGET_FPS=60
 u=ctypes.windll.user32
 k32=ctypes.windll.kernel32
+# Correct pointer-sized Win32 signatures. Without these, 64-bit handles can be truncated.
+k32.GlobalAlloc.restype=ctypes.c_void_p
+k32.GlobalAlloc.argtypes=[ctypes.c_uint,ctypes.c_size_t]
+k32.GlobalLock.restype=ctypes.c_void_p
+k32.GlobalLock.argtypes=[ctypes.c_void_p]
+k32.GlobalUnlock.argtypes=[ctypes.c_void_p]
+k32.GlobalFree.argtypes=[ctypes.c_void_p]
+u.SetClipboardData.restype=ctypes.c_void_p
+u.SetClipboardData.argtypes=[ctypes.c_uint,ctypes.c_void_p]
 LAST_SEEN=0.0
 LAST_CLIENT=''
 try:
