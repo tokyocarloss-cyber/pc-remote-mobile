@@ -21,8 +21,39 @@ server_error=''
 CREATE_NO_WINDOW=0x08000000
 TCP_RULE='NEXUS PC Remote TCP v2'
 UDP_RULE='NEXUS PC Remote UDP v2'
-RECEIVED_DIR=Path.home()/'Desktop'/'Alll'
+
+# Phone -> PC files finish in the user's normal Downloads folder.
+RECEIVED_DIR=Path.home()/'Downloads'
 RECEIVED_DIR.mkdir(parents=True,exist_ok=True)
+
+# This folder is a library source only. It is never used as a transfer inbox.
+LIBRARY_DIR=Path.home()/'Desktop'/'Alll'
+_ORIGINAL_APPS_CATALOG=servermod.apps_catalog
+
+def apps_catalog_with_custom_folder():
+ items=_ORIGINAL_APPS_CATALOG()
+ seen={str(x.get('name','')).casefold() for x in items}
+ try:
+  if LIBRARY_DIR.exists():
+   for p in sorted(LIBRARY_DIR.rglob('*'),key=lambda x:x.name.casefold()):
+    if len(items)>=360:break
+    if not p.is_file() or p.suffix.lower() not in ('.lnk','.url','.exe','.bat','.cmd'):continue
+    name=p.stem.strip()
+    if not name or name.casefold() in seen:continue
+    items.append({'name':name,'store':'Alll'})
+    servermod.APP_INDEX[name]={
+     'shortcut':str(p),
+     'launch_cmd':None,
+     'steam_id':None,
+     'icon_hint':str(p) if p.suffix.lower()=='.exe' else None,
+     'store':'Alll'
+    }
+    seen.add(name.casefold())
+ except Exception:
+  pass
+ return items
+
+servermod.apps_catalog=apps_catalog_with_custom_folder
 
 def icon_image():
  im=Image.new('RGBA',(64,64),(0,0,0,0));d=ImageDraw.Draw(im)
@@ -144,9 +175,10 @@ def make_menu():
   pystray.MenuItem(lambda _:f'NEXUS • {local_ip()}:{PORT}',None,enabled=False),
   pystray.MenuItem(lambda _:'Servidor: ativo' if local_server_ok() else ('Servidor: '+server_error if server_error else 'Servidor: iniciando'),None,enabled=False),
   pystray.MenuItem(lambda _:'Celular: conectado' if phone_connected() else 'Celular: aguardando',None,enabled=False),
+  pystray.MenuItem(lambda _:f'Biblioteca extra: {LIBRARY_DIR}',None,enabled=False),
   pystray.MenuItem('Liberar conexão no Firewall',repair_firewall_action),
   pystray.MenuItem(pad,install_gamepad_driver,enabled=GAMEPAD is None),
-  pystray.MenuItem('Abrir recebidos',open_folder),
+  pystray.MenuItem('Abrir Downloads',open_folder),
   pystray.MenuItem('Sair',stop))
 
 def start_tray():
