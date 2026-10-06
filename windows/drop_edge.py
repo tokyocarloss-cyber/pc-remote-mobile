@@ -12,8 +12,8 @@ class DropEdge:
  def __init__(self):
   self.root=(TkinterDnD.Tk() if TkinterDnD else tk.Tk())
   self.root.overrideredirect(True);self.root.attributes("-topmost",True)
-  self.w=176;self.h=156;self.hot_h=8
-  self.label=tk.Label(self.root,text="↗\nSOLTE PARA ENVIAR",font=("Segoe UI",13,"bold"),bg="#0B1119",fg="#60E6FF")
+  self.w=220;self.h=136;self.hot_h=24
+  self.label=tk.Label(self.root,text="",font=("Segoe UI",12,"bold"),bg="#000000",fg="#60E6FF")
   self.label.pack(fill="both",expand=True)
   self.hide_target()
   if TkinterDnD:
@@ -28,14 +28,14 @@ class DropEdge:
  def hide_target(self,_=None):
   self.place(self.hot_h);self.root.attributes("-alpha",.01);self.label.config(text="",bg="#000000")
  def show_target(self):
-  self.place(self.h);self.root.attributes("-alpha",.96);self.label.config(text="↗\nSOLTE PARA ENVIAR",bg="#0B1119",fg="#60E6FF")
+  self.place(self.h);self.root.attributes("-alpha",.97);self.label.config(text="SOLTE AQUI\nPARA ENVIAR AO CELULAR",bg="#0B1119",fg="#60E6FF")
  def drag_enter(self,e):self.show_target();return e.action
  def drag_leave(self,e):self.hide_target();return e.action
  def drop(self,e):
   paths=[Path(x) for x in self.root.tk.splitlist(e.data)]
   ok=sum(1 for p in paths if p.is_file() and self.queue(p))
   self.label.config(text=f"✓\n{ok} ARQUIVO(S)" if ok else "!\nNENHUM ARQUIVO",fg="#62E69A" if ok else "#FF7A7A")
-  self.root.after(800,self.hide_target);return e.action
+  self.root.after(650,self.hide_target);return e.action
  def queue(self,p):
   try:
    target=OUTBOX/p.name;n=1
