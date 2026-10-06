@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -149,6 +151,14 @@ fun NexusFlowScreen(){
     val ctx=LocalContext.current
     val scope=rememberCoroutineScope()
     val prefs=remember{ctx.getSharedPreferences("nexus_flow",Context.MODE_PRIVATE)}
+    var phoneShareUri by remember{mutableStateOf(prefs.getString("phone_share_uri","").orEmpty())}
+    val phoneFolderPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()){uri->
+        if(uri!=null){
+            runCatching{ctx.contentResolver.takePersistableUriPermission(uri,android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)}
+            phoneShareUri=uri.toString()
+            prefs.edit().putString("phone_share_uri",phoneShareUri).apply()
+        }
+    }
     var path by remember{mutableStateOf("")}
     var parent by remember{mutableStateOf("")}
     var list by remember{mutableStateOf<List<PcFsItem>>(emptyList())}
@@ -239,6 +249,23 @@ fun NexusFlowScreen(){
                 Text("Arquivos do PC, favoritos e ações rápidas",color=NexusUi.Muted,style=MaterialTheme.typography.bodySmall)
             }
             IconButton(onClick={refresh++}){Icon(Icons.Default.Refresh,null,tint=NexusUi.Accent)}
+        }
+        Spacer(Modifier.height(8.dp))
+        Surface(
+            color=NexusUi.Panel,
+            shape=RoundedCornerShape(NexusUi.cardRadius.dp),
+            border=BorderStroke(1.dp,NexusUi.Border),
+            modifier=Modifier.fillMaxWidth()
+        ){
+            Row(Modifier.padding(10.dp),verticalAlignment=Alignment.CenterVertically){
+                Icon(Icons.Default.PhoneAndroid,null,tint=NexusUi.Accent)
+                Spacer(Modifier.width(9.dp))
+                Column(Modifier.weight(1f)){
+                    Text("MEMÓRIA DO CELULAR",color=NexusUi.Text,fontWeight=FontWeight.Black,style=MaterialTheme.typography.labelMedium)
+                    Text(if(phoneShareUri.isBlank())"Escolha a pasta que o PC poderá acessar" else "Compartilhada com o PC • porta 8767",color=NexusUi.Muted,style=MaterialTheme.typography.labelSmall)
+                }
+                Button(onClick={phoneFolderPicker.launch(null)},shape=RoundedCornerShape(13.dp)){Text(if(phoneShareUri.isBlank())"ESCOLHER" else "TROCAR")}
+            }
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
