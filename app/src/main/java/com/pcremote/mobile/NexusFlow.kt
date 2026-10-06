@@ -183,13 +183,13 @@ fun NexusFlowScreen(){
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
-            FilterChip(selected=!recent,onClick={recent=false;path=""},label={Text("Arquivos PC")},leadingIcon={{Icon(Icons.Default.Folder,null,Modifier.size(15.dp))}})
-            FilterChip(selected=recent,onClick={recent=true},label={Text("Recentes")},leadingIcon={{Icon(Icons.Default.History,null,Modifier.size(15.dp))}})
+            FilterChip(selected=!recent,onClick={recent=false;path=""},label={Text("Arquivos PC")},leadingIcon={Icon(Icons.Default.Folder,null,Modifier.size(15.dp))})
+            FilterChip(selected=recent,onClick={recent=true},label={Text("Recentes")},leadingIcon={Icon(Icons.Default.History,null,Modifier.size(15.dp))})
         }
         if(!recent){
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment=Alignment.CenterVertically){
-                IconButton(onClick={if(parent.isNotBlank()){{path=parent}}else null},enabled=parent.isNotBlank()){
+                IconButton(onClick={if(parent.isNotBlank()) path=parent},enabled=parent.isNotBlank()){
                     Icon(Icons.Default.ArrowUpward,null,tint=if(parent.isNotBlank())NexusUi.Accent else NexusUi.Muted)
                 }
                 Text(path.ifBlank{"Pastas principais"},color=NexusUi.Muted,style=MaterialTheme.typography.labelSmall,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f))
