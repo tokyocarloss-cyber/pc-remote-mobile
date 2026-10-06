@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 private data class PadKey(val id: String, val label: String, val command: String)
 
 @Composable
-fun AdvancedGamepad(overlay: Boolean = false) {
+fun AdvancedGamepad(overlay: Boolean = false, forceEdit: Boolean = false) {
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("pad_layout", Context.MODE_PRIVATE) }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -76,7 +76,7 @@ fun AdvancedGamepad(overlay: Boolean = false) {
     var profile by remember { mutableStateOf(prefs.getString("profile", "Padrão") ?: "Padrão") }
     var profileMenu by remember { mutableStateOf(false) }
     var edit by remember { mutableStateOf(false) }
-    LaunchedEffect(overlay) { if (overlay) edit = false }
+    LaunchedEffect(overlay, forceEdit) { if (overlay) edit = forceEdit }
     var scale by remember { mutableFloatStateOf(1f) }
     var alpha by remember { mutableFloatStateOf(.88f) }
     var positions by remember { mutableStateOf(defaults(landscape)) }
@@ -189,11 +189,11 @@ fun AdvancedGamepad(overlay: Boolean = false) {
             }
         }
 
-        Spacer(Modifier.height(7.dp))
+        if (!overlay) Spacer(Modifier.height(7.dp))
         Surface(
             color = if (overlay) Color.Transparent else NexusUi.BackgroundSoft,
             shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(1.dp, NexusUi.Border),
+            border = if (overlay) null else BorderStroke(1.dp, NexusUi.Border),
             modifier = Modifier.fillMaxWidth().weight(1f)
         ) {
             BoxWithConstraints(
