@@ -57,7 +57,6 @@ fun SmoothLiveScreen() {
     var transport by remember { mutableStateOf("STREAM") }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var shelfOpen by remember { mutableStateOf(false) }
-    var controlsOpen by remember { mutableStateOf(false) }
     var controlsVisible by remember { mutableStateOf(false) }
     var controlsEdit by remember { mutableStateOf(false) }
     val quality = ScreenQualities[qualityIndex]
@@ -243,7 +242,7 @@ fun SmoothLiveScreen() {
                 }
 
                 if (controlsVisible) {
-                    LiveControlsOverlay(editMode = controlsEdit)
+                    AdvancedGamepad(overlay = true, forceEdit = controlsEdit)
                     if (controlsEdit) {
                         Surface(
                             color = Color.Black.copy(alpha = .72f),
@@ -259,12 +258,6 @@ fun SmoothLiveScreen() {
                                 TextButton(onClick = { controlsEdit = false }) { Text("CONCLUIR") }
                             }
                         }
-                    }
-                }
-
-                if (NexusFullscreen.active && controlsOpen) {
-                    Box(Modifier.fillMaxSize()) {
-                        AdvancedGamepad(overlay = true)
                     }
                 }
 
