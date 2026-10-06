@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Environment
 import android.os.IBinder
 import android.provider.MediaStore
+import android.provider.DocumentsContract
 import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
@@ -102,6 +103,12 @@ class PhoneInboxService:Service(){
  private fun handleClient(socket:Socket){
   socket.use{s->
    try{
+    val peer=s.inetAddress?.hostAddress?.removePrefix("::ffff:").orEmpty()
+    val expected=Api.host.trim().removePrefix("::ffff:")
+    if(expected.isBlank() || peer!=expected){
+     sendStatus(s,403,"Forbidden")
+     return
+    }
     val input=BufferedInputStream(s.getInputStream())
     val request=readHttpLine(input)?:return
     while(true){val line=readHttpLine(input)?:break;if(line.isBlank())break}
@@ -130,6 +137,16 @@ class PhoneInboxService:Service(){
   return runCatching{Uri.parse(raw)}.getOrNull()
  }
 
+ private fun allowedDocument(uri:Uri):Boolean{
+  val root=selectedRoot()?:return false
+  if(root.authority!=uri.authority)return false
+  return runCatching{
+   val rootId=DocumentsContract.getTreeDocumentId(root)
+   val docId=DocumentsContract.getDocumentId(uri)
+   docId==rootId || docId.startsWith("$rootId/")
+  }.getOrDefault(false)
+ }
+
  private fun serveRoot(s:Socket){
   val rootUri=selectedRoot()
   if(rootUri==null){
@@ -147,7 +164,9 @@ class PhoneInboxService:Service(){
 
  private fun serveBrowse(s:Socket,target:String){
   val u=queryValue(target,"u")
-  val doc=runCatching{DocumentFile.fromSingleUri(this,Uri.parse(u))}.getOrNull()
+  val uri=runCatching{Uri.parse(u)}.getOrNull()
+  if(uri==null||!allowedDocument(uri))return sendStatus(s,403,"Forbidden")
+  val doc=runCatching{DocumentFile.fromSingleUri(this,uri)}.getOrNull()
   if(doc==null||!doc.isDirectory)return sendHtml(s,"<p>Pasta indisponível.</p>")
   serveDocumentList(s,doc,doc.name?:"Pasta")
  }
@@ -168,7 +187,9 @@ class PhoneInboxService:Service(){
 
  private fun serveFile(s:Socket,target:String){
   val u=queryValue(target,"u")
-  val doc=runCatching{DocumentFile.fromSingleUri(this,Uri.parse(u))}.getOrNull()
+  val uri=runCatching{Uri.parse(u)}.getOrNull()
+  if(uri==null||!allowedDocument(uri))return sendStatus(s,403,"Forbidden")
+  val doc=runCatching{DocumentFile.fromSingleUri(this,uri)}.getOrNull()
   if(doc==null||!doc.isFile)return sendStatus(s,404,"Not Found")
   val len=doc.length()
   val name=(doc.name?:"arquivo").replace("\"","")
