@@ -4,7 +4,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object RemoteClient {
-    fun get(path: String): ByteArray? {
+    fun get(path: String, readTimeoutMs: Int = 2500): ByteArray? {
         if (Api.host.isBlank()) return null
         return try {
             val c = URL("http://${Api.host}:8765$path").openConnection() as HttpURLConnection
