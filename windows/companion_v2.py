@@ -1,4 +1,4 @@
-import ctypes, io, os, shutil, struct, subprocess, sys, threading, time, urllib.parse, urllib.request
+import ctypes, io, os, shutil, struct, subprocess, sys, threading, time, urllib.parse, urllib.request, winreg
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 
@@ -26,6 +26,55 @@ server = None
 edge = None
 tray_icon = None
 server_error = ''
+AUTOSTART_VALUE = 'NEXUS PC Remote'
+PREFS_KEY = r'Software\\NEXUS PC Remote'
+
+def startup_command():
+    exe = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve()
+    return f'"{exe}"'
+
+def autostart_enabled():
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\\Microsoft\\Windows\\CurrentVersion\\Run') as key:
+            value, _ = winreg.QueryValueEx(key, AUTOSTART_VALUE)
+            return bool(value)
+    except Exception:
+        return False
+
+def set_autostart(enabled):
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\\Microsoft\\Windows\\CurrentVersion\\Run') as key:
+            if enabled:
+                winreg.SetValueEx(key, AUTOSTART_VALUE, 0, winreg.REG_SZ, startup_command())
+            else:
+                try:
+                    winreg.DeleteValue(key, AUTOSTART_VALUE)
+                except FileNotFoundError:
+                    pass
+        return True
+    except Exception:
+        return False
+
+def first_run_autostart_prompt():
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, PREFS_KEY) as key:
+            try:
+                asked, _ = winreg.QueryValueEx(key, 'AskedAutostart')
+                if int(asked) == 1:
+                    return
+            except Exception:
+                pass
+            answer = ctypes.windll.user32.MessageBoxW(
+                0,
+                'Deseja iniciar o NEXUS PC Remote automaticamente sempre que este usuário entrar no Windows?\\n\\nVocê poderá mudar isso depois pelo ícone do NEXUS na bandeja.',
+                'NEXUS PC Remote',
+                0x24
+            )
+            if answer == 6:
+                set_autostart(True)
+            winreg.SetValueEx(key, 'AskedAutostart', 0, winreg.REG_DWORD, 1)
+    except Exception:
+        pass
 
 FRAME_BYTES = b''
 FRAME_SEQ = 0
@@ -534,6 +583,19 @@ def stop(icon=None, item=None):
         pass
 
 
+def toggle_autostart(icon=None, item=None):
+    enabled = autostart_enabled()
+    ok = set_autostart(not enabled)
+    if tray_icon:
+        try:
+            tray_icon.notify(
+                ('Ativado' if not enabled else 'Desativado') if ok else 'Não foi possível alterar',
+                'Iniciar com o Windows'
+            )
+            tray_icon.update_menu()
+        except Exception:
+            pass
+
 def make_menu():
     pad = 'Controle virtual: pronto' if GAMEPAD else 'Controle virtual: indisponível'
     firewall = 'Firewall: liberado' if firewall_ok() else 'Liberar conexão no Firewall'
@@ -545,6 +607,10 @@ def make_menu():
         pystray.MenuItem(lambda _: f'Biblioteca extra: {LIBRARY_DIR}', None, enabled=False),
         pystray.MenuItem(firewall, repair_firewall, enabled=not firewall_ok()),
         pystray.MenuItem(pad, None, enabled=False),
+        pystray.MenuItem(
+            lambda _: 'Iniciar com o Windows: ativado' if autostart_enabled() else 'Iniciar com o Windows: desativado',
+            toggle_autostart
+        ),
         pystray.MenuItem('Abrir Downloads', open_downloads),
         pystray.MenuItem('Sair', stop)
     )
@@ -582,6 +648,7 @@ def start_services():
 
 
 if __name__ == '__main__':
+    first_run_autostart_prompt()
     start_services(); start_tray()
     edge = DropEdge()
     try:
