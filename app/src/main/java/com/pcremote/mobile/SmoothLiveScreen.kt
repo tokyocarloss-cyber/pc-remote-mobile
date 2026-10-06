@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -55,6 +57,8 @@ fun SmoothLiveScreen() {
     var transport by remember { mutableStateOf("STREAM") }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var shelfOpen by remember { mutableStateOf(false) }
+    var controlsVisible by remember { mutableStateOf(false) }
+    var controlsEdit by remember { mutableStateOf(false) }
     val quality = ScreenQualities[qualityIndex]
 
     fun registerFrame(bytes: ByteArray) {
@@ -237,6 +241,26 @@ fun SmoothLiveScreen() {
                     }
                 }
 
+                if (controlsVisible) {
+                    LiveControlsOverlay(editMode = controlsEdit)
+                    if (controlsEdit) {
+                        Surface(
+                            color = Color.Black.copy(alpha = .72f),
+                            shape = RoundedCornerShape(99.dp),
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("EDITANDO CONTROLES", color = NexusUi.Accent, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                Spacer(Modifier.width(8.dp))
+                                TextButton(onClick = { controlsEdit = false }) { Text("CONCLUIR") }
+                            }
+                        }
+                    }
+                }
+
                 if (NexusFullscreen.active) {
                     Box(
                         Modifier.align(Alignment.TopCenter).padding(top = 3.dp).width(74.dp).height(12.dp)
@@ -254,13 +278,26 @@ fun SmoothLiveScreen() {
                             shadowElevation = 16.dp,
                             modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp)
                         ) {
-                            Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.padding(6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
                                 EdgeShortcut("ALT F4", Icons.Default.Close) { hotkey("ALT_F4") }
                                 EdgeShortcut("ALT TAB", Icons.Default.SwapHoriz) { hotkey("ALT_TAB") }
                                 EdgeShortcut("PRINT", Icons.Default.CropFree) { hotkey("SNIP") }
                                 EdgeShortcut("WIN D", Icons.Default.DesktopWindows) { hotkey("WIN_D") }
+                                EdgeShortcut(if (controlsVisible) "CTRL ON" else "CTRL", Icons.Default.SportsEsports) {
+                                    controlsVisible = !controlsVisible
+                                    if (!controlsVisible) controlsEdit = false
+                                }
+                                if (controlsVisible) {
+                                    EdgeShortcut(if (controlsEdit) "OK EDIT" else "EDITAR", Icons.Default.Edit) {
+                                        controlsEdit = !controlsEdit
+                                    }
+                                }
                                 EdgeShortcut("ESC", Icons.Default.ArrowBack) { hotkey("ESC") }
-                                EdgeShortcut("SAIR", Icons.Default.FullscreenExit) { NexusFullscreen.active = false; shelfOpen = false }
+                                EdgeShortcut("SAIR", Icons.Default.FullscreenExit) {
+                                    NexusFullscreen.active = false
+                                    shelfOpen = false
+                                    controlsEdit = false
+                                }
                             }
                         }
                     }
