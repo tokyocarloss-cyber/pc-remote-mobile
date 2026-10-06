@@ -28,12 +28,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import kotlin.math.cos
+import kotlin.math.sin
 
 data class PcFsItem(val name:String,val path:String,val dir:Boolean,val size:Long=0L,val mtime:Long=0L)
 
@@ -154,6 +157,7 @@ fun NexusFlowScreen(){
     var favorites by remember{mutableStateOf(prefs.getStringSet("folders",emptySet())?.toSet().orEmpty())}
     var enabledActions by remember{mutableStateOf(prefs.getStringSet("actions",DefaultFlowActionIds)?.toSet()?:DefaultFlowActionIds)}
     var refresh by remember{mutableIntStateOf(0)}
+    var showFolderWheel by remember{mutableStateOf(false)}
 
     LaunchedEffect(path,recent,refresh,Api.host){
         if(Api.host.isBlank())return@LaunchedEffect
@@ -171,6 +175,60 @@ fun NexusFlowScreen(){
             }
         }
         path=result.first;parent=result.second;list=result.third;loading=false
+    }
+
+    if(showFolderWheel){
+        val radialFavorites=favorites.take(8).toList()
+        Dialog(onDismissRequest={showFolderWheel=false}){
+            Surface(
+                color=NexusUi.PanelRaised,
+                shape=RoundedCornerShape(999.dp),
+                border=BorderStroke(1.dp,NexusUi.Border),
+                shadowElevation=24.dp,
+                modifier=Modifier.size(330.dp)
+            ){
+                Box(Modifier.fillMaxSize()){
+                    if(radialFavorites.isEmpty()){
+                        Column(Modifier.align(Alignment.Center),horizontalAlignment=Alignment.CenterHorizontally){
+                            Icon(Icons.Default.StarBorder,null,tint=NexusUi.Accent)
+                            Spacer(Modifier.height(6.dp))
+                            Text("Favorite pastas primeiro",color=NexusUi.Text,fontWeight=FontWeight.Bold)
+                        }
+                    }else{
+                        radialFavorites.forEachIndexed{index,fav->
+                            val angle=(Math.PI*2.0*index/radialFavorites.size)-Math.PI/2.0
+                            val x=137f+(110f*cos(angle)).toFloat()
+                            val y=137f+(110f*sin(angle)).toFloat()
+                            Surface(
+                                color=NexusUi.BackgroundSoft,
+                                shape=RoundedCornerShape(999.dp),
+                                border=BorderStroke(1.dp,NexusUi.Accent.copy(alpha=.55f)),
+                                modifier=Modifier.offset(x.dp,y.dp).size(58.dp).clickable{
+                                    recent=false
+                                    path=fav
+                                    showFolderWheel=false
+                                }
+                            ){
+                                Column(Modifier.fillMaxSize(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
+                                    Icon(Icons.Default.Folder,null,tint=NexusUi.Accent,modifier=Modifier.size(20.dp))
+                                    Text(fav.substringAfterLast('\\').ifBlank{"PC"}.take(8),color=NexusUi.Text,style=MaterialTheme.typography.labelSmall,maxLines=1)
+                                }
+                            }
+                        }
+                        Surface(
+                            color=NexusUi.AccentStrong,
+                            shape=RoundedCornerShape(999.dp),
+                            modifier=Modifier.align(Alignment.Center).size(94.dp)
+                        ){
+                            Column(Modifier.fillMaxSize(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
+                                Icon(Icons.Default.TrackChanges,null,tint=androidx.compose.ui.graphics.Color.White)
+                                Text("PASTAS",color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Black,style=MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Column(Modifier.fillMaxSize()){
@@ -202,8 +260,15 @@ fun NexusFlowScreen(){
             }
         }
         if(favorites.isNotEmpty() && !recent){
-            Row(Modifier.fillMaxWidth().padding(vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                favorites.take(3).forEach{fav->AssistChip(onClick={path=fav},label={Text(fav.substringAfterLast('\\').ifBlank{"Favorito"},maxLines=1)})}
+            Row(Modifier.fillMaxWidth().padding(vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically){
+                OutlinedButton(onClick={showFolderWheel=true},shape=RoundedCornerShape(14.dp)){
+                    Icon(Icons.Default.TrackChanges,null,Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("RODA")
+                }
+                Row(Modifier.weight(1f).horizontalScroll(androidx.compose.foundation.rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                    favorites.forEach{fav->AssistChip(onClick={path=fav},label={Text(fav.substringAfterLast('\\').ifBlank{"Favorito"},maxLines=1)})}
+                }
             }
         }
         Surface(color=NexusUi.Panel,shape=RoundedCornerShape(NexusUi.cardRadius.dp),border=BorderStroke(1.dp,NexusUi.Border),modifier=Modifier.weight(1f).fillMaxWidth()){
