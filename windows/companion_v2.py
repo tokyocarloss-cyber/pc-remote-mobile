@@ -716,6 +716,18 @@ def open_downloads(icon=None, item=None):
     os.startfile(str(RECEIVED_DIR))
 
 
+def open_phone_files(icon=None, item=None):
+    ip = getattr(servermod, 'LAST_CLIENT', '') or ''
+    if not ip:
+        return message('NEXUS PC Remote', 'Abra o NEXUS no celular e conecte ao PC primeiro.')
+    try:
+        os.startfile(f'http://{ip}:8767/')
+    except Exception:
+        message('NEXUS PC Remote', 'Não foi possível abrir a memória do celular.')
+
+
+
+
 def stop(icon=None, item=None):
     global server
     try:
@@ -763,6 +775,7 @@ def make_menu():
             lambda _: 'Iniciar com o Windows: ativado' if autostart_enabled() else 'Iniciar com o Windows: desativado',
             toggle_autostart
         ),
+        pystray.MenuItem('Abrir arquivos do celular', open_phone_files),
         pystray.MenuItem('Abrir Downloads', open_downloads),
         pystray.MenuItem('Sair', stop)
     )
