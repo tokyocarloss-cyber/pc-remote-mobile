@@ -57,7 +57,7 @@ class PhoneInboxService:Service(){
 
  private fun receive(name:String){
   val encoded=URLEncoder.encode(name,"UTF-8").replace("+","%20")
-  val data=RemoteClient.get("/outbox/$encoded")?:return
+  val data=RemoteClient.get("/outbox/$encoded",120000)?:return
   val type=mime(name)
   val (collection,relative)=when{
    type.startsWith("image/")->MediaStore.Images.Media.EXTERNAL_CONTENT_URI to (Environment.DIRECTORY_PICTURES+"/NEXUS")
