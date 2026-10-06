@@ -8,6 +8,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NEXUS_KEYSTORE_BASE64: ${{ secrets.NEXUS_KEYSTORE_BASE64 }}
+      NEXUS_KEYSTORE_PASSWORD: ${{ secrets.NEXUS_KEYSTORE_PASSWORD }}
+      NEXUS_KEY_ALIAS: ${{ secrets.NEXUS_KEY_ALIAS }}
+      NEXUS_KEY_PASSWORD: ${{ secrets.NEXUS_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -17,10 +22,30 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build debug APK
+
+      - name: Build test APK
         run: gradle assembleDebug
-      - name: Upload APK
+
+      - name: Upload test APK
         uses: actions/upload-artifact@v4
         with:
-          name: pc-remote-mobile-${{ github.ref_name }}
+          name: NEXUS-PC-Remote-Android-TEST-${{ github.ref_name }}
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Prepare private release keystore
+        if: env.NEXUS_KEYSTORE_BASE64 != '' && env.NEXUS_KEYSTORE_PASSWORD != '' && env.NEXUS_KEY_ALIAS != '' && env.NEXUS_KEY_PASSWORD != ''
+        shell: bash
+        run: |
+          printf '%s' "$NEXUS_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nexus-release.jks"
+          echo "NEXUS_KEYSTORE_PATH=$RUNNER_TEMP/nexus-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        if: env.NEXUS_KEYSTORE_BASE64 != '' && env.NEXUS_KEYSTORE_PASSWORD != '' && env.NEXUS_KEY_ALIAS != '' && env.NEXUS_KEY_PASSWORD != ''
+        run: gradle assembleRelease
+
+      - name: Upload signed release APK
+        if: env.NEXUS_KEYSTORE_BASE64 != '' && env.NEXUS_KEYSTORE_PASSWORD != '' && env.NEXUS_KEY_ALIAS != '' && env.NEXUS_KEY_PASSWORD != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-PC-Remote-Android-RELEASE
+          path: app/build/outputs/apk/release/app-release.apk
