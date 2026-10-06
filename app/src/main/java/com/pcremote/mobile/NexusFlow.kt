@@ -397,7 +397,7 @@ private suspend fun capturePcToGallery(ctx:Context):Boolean=withContext(Dispatch
 private suspend fun downloadPcFile(ctx:Context,entry:PcFsItem):Boolean=withContext(Dispatchers.IO){
     try{
         val encoded=URLEncoder.encode(entry.path,"UTF-8")
-        val data=RemoteClient.get("/fs/download?path=$encoded")?:return@withContext false
+        val data=RemoteClient.get("/fs/download?path=$encoded",120000)?:return@withContext false
         val values=ContentValues().apply{
             put(MediaStore.Downloads.DISPLAY_NAME,entry.name)
             put(MediaStore.Downloads.MIME_TYPE,"application/octet-stream")
