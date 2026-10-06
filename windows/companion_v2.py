@@ -1,4 +1,4 @@
-import ctypes, io, os, shutil, struct, subprocess, sys, threading, time, urllib.parse, urllib.request, winreg
+import ctypes, io, os, shutil, struct, subprocess, sys, threading, time, urllib.parse, urllib.request, winreg, winreg
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 
@@ -81,6 +81,29 @@ FRAME_SEQ = 0
 FRAME_LOCK = threading.Lock()
 CAPTURE_ERROR = ''
 CAPTURE_SOURCE = 'iniciando'
+RECORDING = False
+RECORD_STARTED_AT = 0.0
+
+
+def app_executable_path():
+    if getattr(sys, 'frozen', False):
+        return str(Path(sys.executable).resolve())
+    return str(Path(__file__).resolve())
+
+
+def ensure_autostart():
+    """Starts NEXUS with the current Windows user without UAC or a visible console."""
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r'Software\\Microsoft\\Windows\\CurrentVersion\\Run',
+            0, winreg.KEY_SET_VALUE
+        )
+        winreg.SetValueEx(key, 'NEXUS PC Remote', 0, winreg.REG_SZ, f'"{app_executable_path()}"')
+        winreg.CloseKey(key)
+        return True
+    except Exception:
+        return False
 
 
 def hidden_startup():
@@ -361,6 +384,126 @@ def power_action(value):
             hidden_popen(['rundll32.exe', 'powrprof.dll,SetSuspendState', '0,1,0'])
 
 
+def allowed_pc_path(raw):
+    home = Path.home().resolve()
+    value = urllib.parse.unquote_plus(str(raw or '')).strip()
+    p = Path(value).expanduser() if value else home
+    if not p.is_absolute():
+        p = home / p
+    p = p.resolve()
+    if p == home or home in p.parents:
+        return p
+    raise PermissionError('Fora da pasta do usuário')
+
+
+def file_roots():
+    home = Path.home()
+    roots = []
+    for name, p in [
+        ('Início', home),
+        ('Área de Trabalho', home / 'Desktop'),
+        ('Downloads', home / 'Downloads'),
+        ('Documentos', home / 'Documents'),
+        ('Imagens', home / 'Pictures'),
+        ('Vídeos', home / 'Videos')
+    ]:
+        if p.exists():
+            roots.append({'name': name, 'path': str(p), 'dir': True, 'size': 0})
+    return roots
+
+
+def list_pc_files(raw_path):
+    if not raw_path:
+        return {'path': '', 'parent': '', 'items': file_roots()}
+    p = allowed_pc_path(raw_path)
+    if not p.exists() or not p.is_dir():
+        raise FileNotFoundError(str(p))
+    home = Path.home().resolve()
+    parent = '' if p == home else str(p.parent)
+    items = []
+    for item in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.casefold())):
+        try:
+            st = item.stat()
+            items.append({
+                'name': item.name,
+                'path': str(item),
+                'dir': item.is_dir(),
+                'size': 0 if item.is_dir() else st.st_size,
+                'mtime': int(st.st_mtime)
+            })
+            if len(items) >= 250:
+                break
+        except Exception:
+            pass
+    return {'path': str(p), 'parent': parent, 'items': items}
+
+
+def recent_pc_files():
+    found = []
+    home = Path.home()
+    for root in [home / 'Downloads', home / 'Desktop', home / 'Pictures', home / 'Videos']:
+        if not root.exists():
+            continue
+        try:
+            for p in root.rglob('*'):
+                if p.is_file():
+                    try:
+                        st = p.stat()
+                        found.append((st.st_mtime, p, st.st_size))
+                    except Exception:
+                        pass
+                if len(found) > 1200:
+                    break
+        except Exception:
+            pass
+    found.sort(key=lambda x: x[0], reverse=True)
+    return [
+        {'name': p.name, 'path': str(p), 'dir': False, 'size': size, 'mtime': int(mtime)}
+        for mtime, p, size in found[:60]
+    ]
+
+
+def queue_latest_recording():
+    time.sleep(1.5)
+    captures = Path.home() / 'Videos' / 'Captures'
+    if not captures.exists():
+        return
+    try:
+        candidates = sorted(captures.glob('*.mp4'), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not candidates:
+            return
+        src = candidates[0]
+        if src.stat().st_mtime < RECORD_STARTED_AT - 5:
+            return
+        target = servermod.OUTBOX / src.name
+        n = 1
+        while target.exists():
+            target = servermod.OUTBOX / f'{src.stem}_{n}{src.suffix}'
+            n += 1
+        shutil.copy2(src, target)
+        if tray_icon:
+            tray_icon.notify('Vídeo enviado para o celular', 'Gravação NEXUS concluída')
+    except Exception:
+        pass
+
+
+def toggle_recording():
+    global RECORDING, RECORD_STARTED_AT
+    u = ctypes.windll.user32
+    for vk in (0x5B, 0x12):
+        u.keybd_event(vk, 0, 0, 0)
+    u.keybd_event(0x52, 0, 0, 0); u.keybd_event(0x52, 0, 2, 0)
+    for vk in (0x12, 0x5B):
+        u.keybd_event(vk, 0, 2, 0)
+    if not RECORDING:
+        RECORDING = True
+        RECORD_STARTED_AT = time.time()
+        return 'started'
+    RECORDING = False
+    threading.Thread(target=queue_latest_recording, daemon=True, name='NexusRecordingQueue').start()
+    return 'stopped'
+
+
 def send_hotkey(name):
     u = ctypes.windll.user32
     combos = {
@@ -414,6 +557,29 @@ class CompanionHandler(servermod.H):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        if path == '/fs/list':
+            q = urllib.parse.parse_qs(parsed.query)
+            raw_path = q.get('path', [''])[0]
+            try:
+                payload = servermod.json.dumps(list_pc_files(raw_path), ensure_ascii=False).encode('utf-8')
+                return self.sendb(payload, 'application/json')
+            except Exception as e:
+                return self.sendb(str(e).encode('utf-8'), code=400)
+        if path == '/fs/recent':
+            payload = servermod.json.dumps(recent_pc_files(), ensure_ascii=False).encode('utf-8')
+            return self.sendb(payload, 'application/json')
+        if path == '/fs/download':
+            q = urllib.parse.parse_qs(parsed.query)
+            try:
+                p = allowed_pc_path(q.get('path', [''])[0])
+                if not p.is_file():
+                    raise FileNotFoundError(str(p))
+                return self.sendb(p.read_bytes(), 'application/octet-stream')
+            except Exception as e:
+                return self.sendb(str(e).encode('utf-8'), code=404)
+        if path == '/capture.jpg':
+            data = fast_screenshot()
+            return self.sendb(data, 'image/jpeg', 200 if data else 503)
         if path == '/stream/status':
             with FRAME_LOCK:
                 seq = FRAME_SEQ
@@ -496,6 +662,13 @@ class CompanionHandler(servermod.H):
                 except Exception:
                     pass
                 return self.sendb(str(e).encode(), code=500)
+        if path == '/record-toggle':
+            servermod.mark_seen(self.client_address[0])
+            try:
+                state = toggle_recording()
+                return self.sendb(state.encode('utf-8'))
+            except Exception as e:
+                return self.sendb(str(e).encode('utf-8'), code=500)
         if path == '/power':
             try:
                 raw = self.body().decode('utf-8', errors='ignore').strip().lower()
@@ -603,6 +776,7 @@ def make_menu():
         pystray.MenuItem(lambda _: f'NEXUS • {local_ip()}:{PORT}', None, enabled=False),
         pystray.MenuItem(lambda _: 'Servidor: ativo' if local_server_ok() else ('Servidor: ' + server_error if server_error else 'Servidor: iniciando'), None, enabled=False),
         pystray.MenuItem(lambda _: 'Celular: conectado' if phone_connected() else 'Celular: aguardando', None, enabled=False),
+        pystray.MenuItem('Inicialização automática: ativa', None, enabled=False),
         pystray.MenuItem(lambda _: f'Tela: {CAPTURE_SOURCE}' + (f' • {CAPTURE_ERROR}' if CAPTURE_ERROR else ''), None, enabled=False),
         pystray.MenuItem(lambda _: f'Biblioteca extra: {LIBRARY_DIR}', None, enabled=False),
         pystray.MenuItem(firewall, repair_firewall, enabled=not firewall_ok()),
