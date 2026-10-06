@@ -52,8 +52,15 @@ private val FlowActions = listOf(
     FlowAction("mouse","Mouse",Icons.Default.Mouse,5),
     FlowAction("gamepad","Controle",Icons.Default.SportsEsports,2),
     FlowAction("apps","Apps",Icons.Default.Apps,1),
+    FlowAction("keyboard","Teclado",Icons.Default.Keyboard,6),
+    FlowAction("media","Mídia",Icons.Default.MusicNote,8),
     FlowAction("capture","Print → celular",Icons.Default.PhotoCamera,null),
-    FlowAction("record","Gravar tela",Icons.Default.FiberManualRecord,null)
+    FlowAction("record","Gravar tela",Icons.Default.FiberManualRecord,null),
+    FlowAction("alttab","Alt+Tab",Icons.Default.SwapHoriz,null),
+    FlowAction("desktop","Área de trabalho",Icons.Default.DesktopWindows,null),
+    FlowAction("taskmgr","Gerenciador",Icons.Default.Memory,null),
+    FlowAction("mute","Mudo",Icons.Default.VolumeOff,null),
+    FlowAction("sleep","Suspender",Icons.Default.Bedtime,null)
 )
 private val DefaultFlowActionIds = FlowActions.map{it.id}.toSet()
 
@@ -122,6 +129,11 @@ fun NexusFlowEdge(go:(Int)->Unit){
                                                 val ok=RemoteClient.post("/record-toggle",ByteArray(0))
                                                 withContext(Dispatchers.Main){status=if(ok)"Gravação alternada • ao parar, o vídeo vem para a Galeria" else "Falha na gravação"}
                                             }
+                                            "alttab"->scope.launch(Dispatchers.IO){Api.post("/hotkey","ALT_TAB")}
+                                            "desktop"->scope.launch(Dispatchers.IO){Api.post("/hotkey","WIN_D")}
+                                            "taskmgr"->scope.launch(Dispatchers.IO){Api.post("/hotkey","CTRL_SHIFT_ESC")}
+                                            "mute"->scope.launch(Dispatchers.IO){Api.post("/key","VOLUME_MUTE")}
+                                            "sleep"->scope.launch(Dispatchers.IO){Api.post("/power","sleep")}
                                             else->{a.page?.let(go);open=false}
                                         }
                                     }
