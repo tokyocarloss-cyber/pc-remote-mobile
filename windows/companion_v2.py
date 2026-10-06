@@ -1,4 +1,4 @@
-import ctypes, io, os, shutil, struct, subprocess, sys, threading, time, urllib.parse, urllib.request, winreg, winreg
+import ctypes, io, os, shutil, struct, subprocess, sys, threading, time, urllib.parse, urllib.request, winreg
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 
@@ -83,27 +83,6 @@ CAPTURE_ERROR = ''
 CAPTURE_SOURCE = 'iniciando'
 RECORDING = False
 RECORD_STARTED_AT = 0.0
-
-
-def app_executable_path():
-    if getattr(sys, 'frozen', False):
-        return str(Path(sys.executable).resolve())
-    return str(Path(__file__).resolve())
-
-
-def ensure_autostart():
-    """Starts NEXUS with the current Windows user without UAC or a visible console."""
-    try:
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r'Software\\Microsoft\\Windows\\CurrentVersion\\Run',
-            0, winreg.KEY_SET_VALUE
-        )
-        winreg.SetValueEx(key, 'NEXUS PC Remote', 0, winreg.REG_SZ, f'"{app_executable_path()}"')
-        winreg.CloseKey(key)
-        return True
-    except Exception:
-        return False
 
 
 def hidden_startup():
@@ -776,7 +755,6 @@ def make_menu():
         pystray.MenuItem(lambda _: f'NEXUS • {local_ip()}:{PORT}', None, enabled=False),
         pystray.MenuItem(lambda _: 'Servidor: ativo' if local_server_ok() else ('Servidor: ' + server_error if server_error else 'Servidor: iniciando'), None, enabled=False),
         pystray.MenuItem(lambda _: 'Celular: conectado' if phone_connected() else 'Celular: aguardando', None, enabled=False),
-        pystray.MenuItem('Inicialização automática: ativa', None, enabled=False),
         pystray.MenuItem(lambda _: f'Tela: {CAPTURE_SOURCE}' + (f' • {CAPTURE_ERROR}' if CAPTURE_ERROR else ''), None, enabled=False),
         pystray.MenuItem(lambda _: f'Biblioteca extra: {LIBRARY_DIR}', None, enabled=False),
         pystray.MenuItem(firewall, repair_firewall, enabled=not firewall_ok()),
