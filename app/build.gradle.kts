@@ -4,6 +4,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val nexusKeystorePath = System.getenv("NEXUS_KEYSTORE_PATH")
+val nexusKeystorePassword = System.getenv("NEXUS_KEYSTORE_PASSWORD")
+val nexusKeyAlias = System.getenv("NEXUS_KEY_ALIAS")
+val nexusKeyPassword = System.getenv("NEXUS_KEY_PASSWORD")
+
 android {
     namespace = "com.pcremote.mobile"
     compileSdk = 35
@@ -14,6 +19,33 @@ android {
         targetSdk = 35
         versionCode = 4
         versionName = "1.0.1"
+    }
+
+    signingConfigs {
+        if (
+            !nexusKeystorePath.isNullOrBlank() &&
+            !nexusKeystorePassword.isNullOrBlank() &&
+            !nexusKeyAlias.isNullOrBlank() &&
+            !nexusKeyPassword.isNullOrBlank()
+        ) {
+            create("release") {
+                storeFile = file(nexusKeystorePath)
+                storePassword = nexusKeystorePassword
+                keyAlias = nexusKeyAlias
+                keyPassword = nexusKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
     }
 
     buildFeatures { compose = true }
