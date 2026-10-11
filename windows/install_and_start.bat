@@ -1,15 +1,17 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title PC Remote - Instalacao
-echo Instalando componente de captura de tela...
-py -m pip install --user pillow
-if errorlevel 1 python -m pip install --user pillow
-echo.
-echo Liberando PC Remote no Firewall do Windows...
-netsh advfirewall firewall delete rule name="PC Remote" >nul 2>&1
-netsh advfirewall firewall add rule name="PC Remote" dir=in action=allow protocol=TCP localport=8765 >nul 2>&1
-echo.
-python pc_remote_server.py
-if errorlevel 1 py pc_remote_server.py
-pause
+title NEXUS PC Remote - Instalacao
+where py >nul 2>&1
+if %errorlevel%==0 (
+  py -m pip install --user pillow
+  py nexus_desktop.py
+) else (
+  python -m pip install --user pillow
+  python nexus_desktop.py
+)
+if errorlevel 1 (
+  echo.
+  echo Confira se Python 3.11+ esta instalado e tente novamente.
+  pause
+)
