@@ -115,7 +115,7 @@ private fun RoutedContent(page: Int, setPage: (Int) -> Unit, content: @Composabl
 @Composable
 fun PremiumShell(page: Int, setPage: (Int) -> Unit, content: @Composable () -> Unit) {
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val activity = LocalContext.current as? Activity
+    val activity = androidx.activity.compose.LocalActivity.current
 
     LaunchedEffect(page) { if (page != 3 && page != 5) NexusFullscreen.active = false }
     LaunchedEffect(NexusFullscreen.active) {

@@ -1,4 +1,5 @@
-Pillow>=10.0
-tkinterdnd2>=0.4.2
-pystray>=0.19.5
-mss>=9.0.1
+Pillow==12.3.0
+tkinterdnd2==0.4.3
+pystray==0.19.5
+mss==10.1.0
+cryptography==46.0.5

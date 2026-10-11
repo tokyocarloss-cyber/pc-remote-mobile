@@ -58,34 +58,10 @@ object Api {
     var connected by mutableStateOf(false)
     var connectionMethod by mutableStateOf("—")
 
-    fun post(path: String, b: String = "") {
-        if (host.isBlank()) return
-        try {
-            val c = URL("http://$host:$PORT$path").openConnection() as HttpURLConnection
-            c.requestMethod = "POST"
-            c.connectTimeout = 700
-            c.readTimeout = 900
-            c.doOutput = true
-            c.outputStream.use { it.write(b.toByteArray()) }
-            connected = c.responseCode in 200..299
-            c.disconnect()
-        } catch (_: Exception) {
-            connected = false
-        }
-    }
+    fun post(path: String, b: String = ""): Boolean = RemoteClient.post(path, b.toByteArray())
 }
 
-private fun pairRequest(ip: String): Boolean = try {
-    val c = URL("http://$ip:$PORT/pair").openConnection() as HttpURLConnection
-    c.requestMethod = "POST"
-    c.connectTimeout = 900
-    c.readTimeout = 900
-    c.doOutput = true
-    c.outputStream.use { }
-    val ok = c.responseCode in 200..299
-    c.disconnect()
-    ok
-} catch (_: Exception) { false }
+private fun pairRequest(ip: String): Boolean = SecureConnection.authenticated(ip)
 
 suspend fun connectToHost(raw: String, method: String): Boolean {
     val ip = raw.trim().removePrefix("http://").removePrefix("https://").substringBefore(':').substringBefore('/')

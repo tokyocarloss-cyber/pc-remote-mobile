@@ -301,12 +301,5 @@ def start_services():
  threading.Thread(target=run_server,daemon=True,name='RemoteServer').start()
 
 if __name__=='__main__':
- start_services();start_tray();edge=DropEdge()
- try:edge.run()
- finally:
-  if server:
-   try:server.shutdown()
-   except:pass
-  try:
-   if tray_icon:tray_icon.stop()
-  except:pass
+ from companion_v2 import main
+ main()

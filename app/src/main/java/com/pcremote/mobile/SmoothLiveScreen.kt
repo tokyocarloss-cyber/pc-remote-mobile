@@ -51,7 +51,7 @@ fun SmoothLiveScreen() {
     var actualFps by remember { mutableIntStateOf(0) }
     var count by remember { mutableIntStateOf(0) }
     var lastFpsAt by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var targetFps by remember { mutableIntStateOf(prefs.getInt("fps", 60).let { if (it in listOf(30,60,120)) it else 60 }) }
+    var targetFps by remember { mutableIntStateOf(prefs.getInt("fps", 60).let { if (it in listOf(30,60)) it else 60 }) }
     var qualityIndex by remember { mutableIntStateOf(prefs.getInt("quality", 0).coerceIn(0, ScreenQualities.lastIndex)) }
     var streamError by remember { mutableStateOf("") }
     var transport by remember { mutableStateOf("STREAM") }
@@ -61,8 +61,8 @@ fun SmoothLiveScreen() {
     var controlsEdit by remember { mutableStateOf(false) }
     val quality = ScreenQualities[qualityIndex]
 
-    fun registerFrame(bytes: ByteArray) {
-        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+    suspend fun registerFrame(bytes: ByteArray) {
+        val bmp = withContext(Dispatchers.IO) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) } ?: return
         frame = bmp.asImageBitmap()
         Api.connected = true
         count++
@@ -79,7 +79,7 @@ fun SmoothLiveScreen() {
     fun clickAt(pos: Offset, double: Boolean = false) {
         val s = viewport
         if (s.width <= 0 || s.height <= 0) return
-        val imageAspect = quality.w.toFloat() / quality.h.toFloat()
+        val imageAspect = frame?.let { it.width.toFloat() / it.height.toFloat() } ?: return
         val boxAspect = s.width.toFloat() / s.height.toFloat()
         val drawW: Float
         val drawH: Float
@@ -109,7 +109,7 @@ fun SmoothLiveScreen() {
         var conn: HttpURLConnection? = null
         try {
             val path = "http://${Api.host}:8765/stream.raw?w=${quality.w}&h=${quality.h}&q=${quality.jpeg}&fps=$targetFps"
-            conn = (URL(path).openConnection() as HttpURLConnection).apply {
+            conn = SecureConnection.open(path.substringAfter(":8765")).apply {
                 connectTimeout = 1800
                 readTimeout = 2800
                 useCaches = false
@@ -142,7 +142,7 @@ fun SmoothLiveScreen() {
             var conn: HttpURLConnection? = null
             try {
                 val url = "http://${Api.host}:8765/screen.jpg?w=${quality.w}&h=${quality.h}&q=${quality.jpeg}&fps=$targetFps&t=${System.nanoTime()}"
-                conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                conn = SecureConnection.open(url.substringAfter(":8765")).apply {
                     connectTimeout = 1200
                     readTimeout = 1800
                     useCaches = false
@@ -184,7 +184,7 @@ fun SmoothLiveScreen() {
             Title("Tela do PC", "Transmissão de baixa latência com toque")
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(30, 60, 120).forEach { value ->
+                listOf(30, 60).forEach { value ->
                     StreamOption("$value FPS", targetFps == value, Modifier.weight(1f)) {
                         targetFps = value
                         prefs.edit().putInt("fps", value).apply()

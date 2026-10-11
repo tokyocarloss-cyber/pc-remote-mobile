@@ -1,4 +1,10 @@
-import ctypes, io, os, shutil, struct, subprocess, sys, threading, time, urllib.parse, urllib.request, winreg
+import ssl, secrets
+from security import DEVICES, fingerprint
+import ctypes, io, os, shutil, struct, subprocess, sys, threading, time, urllib.parse, urllib.request
+try:
+    import winreg
+except ImportError:
+    winreg = None
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 
@@ -26,16 +32,17 @@ server = None
 edge = None
 tray_icon = None
 server_error = ''
+dashboard = None
 AUTOSTART_VALUE = 'NEXUS PC Remote'
-PREFS_KEY = r'Software\\NEXUS PC Remote'
+PREFS_KEY = r'Software\NEXUS PC Remote'
 
 def startup_command():
     exe = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve()
-    return f'"{exe}"'
+    return f'"{exe}"' if getattr(sys, 'frozen', False) else f'"{sys.executable}" "{exe}"'
 
 def autostart_enabled():
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\\Microsoft\\Windows\\CurrentVersion\\Run') as key:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Run') as key:
             value, _ = winreg.QueryValueEx(key, AUTOSTART_VALUE)
             return bool(value)
     except Exception:
@@ -43,7 +50,7 @@ def autostart_enabled():
 
 def set_autostart(enabled):
     try:
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\\Microsoft\\Windows\\CurrentVersion\\Run') as key:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Run') as key:
             if enabled:
                 winreg.SetValueEx(key, AUTOSTART_VALUE, 0, winreg.REG_SZ, startup_command())
             else:
@@ -79,6 +86,7 @@ def first_run_autostart_prompt():
 FRAME_BYTES = b''
 FRAME_SEQ = 0
 FRAME_LOCK = threading.Lock()
+UPLOAD_LOCK = threading.Lock()
 CAPTURE_ERROR = ''
 CAPTURE_SOURCE = 'iniciando'
 RECORDING = False
@@ -126,7 +134,7 @@ def safe_launch(name):
         servermod.apps_catalog()
     item = servermod.APP_INDEX.get(name)
     if not item:
-        return
+        raise ValueError('Unknown application')
     steam_id = item.get('steam_id')
     if steam_id:
         os.startfile('steam://rungameid/' + str(steam_id)); return
@@ -266,6 +274,8 @@ def encode_frame(im):
 def capture_loop():
     global FRAME_BYTES, FRAME_SEQ, CAPTURE_ERROR, CAPTURE_SOURCE
     while True:
+        if time.monotonic() - getattr(servermod, 'LAST_SCREEN', 0) > 3:
+            time.sleep(.2); continue
         started = time.perf_counter()
         data = b''
         try:
@@ -273,6 +283,8 @@ def capture_loop():
                 with mss.mss() as sct:
                     monitor = sct.monitors[1]
                     while True:
+                        if time.monotonic() - getattr(servermod, 'LAST_SCREEN', 0) > 3:
+                            time.sleep(.2); continue
                         started = time.perf_counter()
                         shot = sct.grab(monitor)
                         im = Image.frombytes('RGB', shot.size, shot.rgb)
@@ -282,7 +294,7 @@ def capture_loop():
                             FRAME_SEQ += 1
                         CAPTURE_SOURCE = 'MSS'
                         CAPTURE_ERROR = ''
-                        target = max(15, min(120, int(servermod.SCREEN_TARGET_FPS)))
+                        target = max(15, min(60, int(servermod.SCREEN_TARGET_FPS)))
                         wait = (1.0 / target) - (time.perf_counter() - started)
                         if wait > 0:
                             time.sleep(wait)
@@ -365,12 +377,13 @@ def power_action(value):
 
 def allowed_pc_path(raw):
     home = Path.home().resolve()
-    value = urllib.parse.unquote_plus(str(raw or '')).strip()
+    value = str(raw or '').strip()
     p = Path(value).expanduser() if value else home
     if not p.is_absolute():
         p = home / p
     p = p.resolve()
-    if p == home or home in p.parents:
+    shared = [home / n for n in ('Desktop','Downloads','Documents','Pictures','Videos','Music')]
+    if any(p == root.resolve() or root.resolve() in p.parents for root in shared):
         return p
     raise PermissionError('Fora da pasta do usuário')
 
@@ -379,7 +392,6 @@ def file_roots():
     home = Path.home()
     roots = []
     for name, p in [
-        ('Início', home),
         ('Área de Trabalho', home / 'Desktop'),
         ('Downloads', home / 'Downloads'),
         ('Documentos', home / 'Documents'),
@@ -398,14 +410,14 @@ def list_pc_files(raw_path):
     if not p.exists() or not p.is_dir():
         raise FileNotFoundError(str(p))
     home = Path.home().resolve()
-    parent = '' if p == home else str(p.parent)
+    parent = '' if p.parent == home else str(p.parent)
     items = []
     for item in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.casefold())):
         try:
             st = item.stat()
             items.append({
                 'name': item.name,
-                'path': str(item),
+                'path': str(allowed_pc_path(str(item))),
                 'dir': item.is_dir(),
                 'size': 0 if item.is_dir() else st.st_size,
                 'mtime': int(st.st_mtime)
@@ -427,6 +439,7 @@ def recent_pc_files():
             for p in root.rglob('*'):
                 if p.is_file():
                     try:
+                        allowed_pc_path(str(p))
                         st = p.stat()
                         found.append((st.st_mtime, p, st.st_size))
                     except Exception:
@@ -534,6 +547,7 @@ def zoom_wheel(raw):
 
 class CompanionHandler(servermod.H):
     def do_GET(self):
+        if not self.authorized(): return
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         if path == '/fs/list':
@@ -553,10 +567,11 @@ class CompanionHandler(servermod.H):
                 p = allowed_pc_path(q.get('path', [''])[0])
                 if not p.is_file():
                     raise FileNotFoundError(str(p))
-                return self.sendb(p.read_bytes(), 'application/octet-stream')
+                return self.sendfile(p)
             except Exception as e:
                 return self.sendb(str(e).encode('utf-8'), code=404)
         if path == '/capture.jpg':
+            servermod.LAST_SCREEN = time.monotonic()
             data = fast_screenshot()
             return self.sendb(data, 'image/jpeg', 200 if data else 503)
         if path == '/stream/status':
@@ -581,7 +596,7 @@ class CompanionHandler(servermod.H):
             servermod.SCREEN_WIDTH = max(640, min(2560, int(q.get('w', [servermod.SCREEN_WIDTH])[0])))
             servermod.SCREEN_HEIGHT = max(360, min(1440, int(q.get('h', [servermod.SCREEN_HEIGHT])[0])))
             servermod.SCREEN_QUALITY = max(35, min(90, int(q.get('q', [servermod.SCREEN_QUALITY])[0])))
-            servermod.SCREEN_TARGET_FPS = max(15, min(120, int(q.get('fps', [servermod.SCREEN_TARGET_FPS])[0])))
+            servermod.SCREEN_TARGET_FPS = max(15, min(60, int(q.get('fps', [servermod.SCREEN_TARGET_FPS])[0])))
         except Exception:
             pass
         servermod.mark_seen(self.client_address[0])
@@ -595,7 +610,9 @@ class CompanionHandler(servermod.H):
         last_seq = -1
         last_send = time.monotonic()
         try:
-            while True:
+            while DEVICES.valid(getattr(self, 'auth_token', '')):
+                servermod.mark_seen(self.client_address[0])
+                servermod.LAST_SCREEN = time.monotonic()
                 with FRAME_LOCK:
                     data = FRAME_BYTES
                     seq = FRAME_SEQ
@@ -617,31 +634,44 @@ class CompanionHandler(servermod.H):
             return
 
     def do_POST(self):
+        if not self.authorized(): return
         path = urllib.parse.urlparse(self.path).path
         if path.startswith('/upload/'):
+            part = None
             try:
-                raw = self.body()
-            except ValueError as e:
-                return self.sendb(str(e).encode(), code=413)
-            if not raw:
-                return self.sendb(b'Empty upload rejected', code=400)
-            name = Path(urllib.parse.unquote_plus(path[8:])).name or 'arquivo'
-            try:
-                servermod.mark_seen(self.client_address[0])
-                target = unique_target(name)
-                part = target.with_name(target.name + '.nexus-part')
-                with open(part, 'wb') as f:
-                    f.write(raw); f.flush(); os.fsync(f.fileno())
-                os.replace(part, target)
+                if self.headers.get('Transfer-Encoding'):
+                    raise ValueError('Content-Length required')
+                length = int(self.headers.get('Content-Length', '-1'))
+                if not 0 <= length <= 4 * 1024**3:
+                    raise ValueError('Maximum upload is 4 GB')
+                name = urllib.parse.unquote_plus(path[8:])
+                if not name or any(c in name for c in ('/', '\\', ':', '\x00')) or name in ('.','..'):
+                    raise ValueError('Invalid filename')
+                # An exclusive staging file avoids concurrent same-name overwrites.
+                with UPLOAD_LOCK:
+                    target = unique_target(name)
+                    part = target.with_name(target.name + '.nexus-part')
+                    output = part.open('xb')
+                with output:
+                    remaining = length
+                    while remaining:
+                        block = self.rfile.read(min(65536, remaining))
+                        if not block: raise ValueError('Incomplete upload')
+                        output.write(block); remaining -= len(block)
+                    output.flush(); os.fsync(output.fileno())
+                with UPLOAD_LOCK:
+                    # Refuse replacement if an external process created the target.
+                    if target.exists(): raise FileExistsError('Destination already exists')
+                    part.rename(target)
                 notify_received(target)
                 return self.sendb(b'OK')
-            except Exception as e:
-                try:
-                    part.unlink(missing_ok=True)
-                except Exception:
-                    pass
-                return self.sendb(str(e).encode(), code=500)
+            except (ValueError, OSError):
+                self.close_connection = True
+                return self.sendb(b'Upload incomplete, invalid, or destination unavailable', code=400)
+            finally:
+                if part: part.unlink(missing_ok=True)
         if path == '/record-toggle':
+            self.body()
             servermod.mark_seen(self.client_address[0])
             try:
                 state = toggle_recording()
@@ -685,7 +715,7 @@ def message(title, text):
 
 def local_server_ok():
     try:
-        with urllib.request.urlopen(f'http://127.0.0.1:{PORT}/ping', timeout=.6) as r:
+        with urllib.request.urlopen(f'https://127.0.0.1:{PORT}/ping', timeout=.6, context=ssl._create_unverified_context()) as r:
             return r.status == 200 and b'PC Remote' in r.read(64)
     except Exception:
         return False
@@ -705,8 +735,8 @@ def firewall_ok():
 def repair_firewall(icon=None, item=None):
     cmd = (f'/c netsh advfirewall firewall delete rule name="{TCP_RULE}" >nul 2>&1 '
            f'& netsh advfirewall firewall delete rule name="{UDP_RULE}" >nul 2>&1 '
-           f'& netsh advfirewall firewall add rule name="{TCP_RULE}" dir=in action=allow protocol=TCP localport={PORT} profile=any enable=yes '
-           f'& netsh advfirewall firewall add rule name="{UDP_RULE}" dir=in action=allow protocol=UDP localport={DISCOVERY_PORT} profile=any enable=yes')
+           f'& netsh advfirewall firewall add rule name="{TCP_RULE}" dir=in action=allow protocol=TCP localport={PORT} profile=private remoteip=localsubnet enable=yes '
+           f'& netsh advfirewall firewall add rule name="{UDP_RULE}" dir=in action=allow protocol=UDP localport={DISCOVERY_PORT} profile=private remoteip=localsubnet enable=yes')
     result = ctypes.windll.shell32.ShellExecuteW(None, 'runas', 'cmd.exe', cmd, None, 0)
     if result <= 32:
         message('NEXUS PC Remote', 'Não foi possível configurar o Firewall.')
@@ -732,7 +762,9 @@ def stop(icon=None, item=None):
     global server
     try:
         if server:
+            servermod.reset_input()
             server.shutdown()
+            server.server_close()
     except Exception:
         pass
     try:
@@ -760,10 +792,29 @@ def toggle_autostart(icon=None, item=None):
         except Exception:
             pass
 
+def pair_phone(icon=None, item=None):
+    if not server:
+        return message('NEXUS', 'Servidor ainda não iniciou: ' + server_error)
+    pin = DEVICES.open_pairing()
+    message('NEXUS • Pareamento por 2 minutos',
+            'No celular, confira este certificado SHA-256:\n\n' + ' '.join(fingerprint()[i:i+8] for i in range(0,64,8)) +
+            '\n\nPIN: ' + pin + '\n\nO PIN autoriza um único dispositivo. Limite de 5 tentativas.')
+
+
+def manage_devices(icon=None, item=None):
+    names = '\n'.join(d['name'] for d in DEVICES.devices.values()) or 'Nenhum dispositivo'
+    if ctypes.windll.user32.MessageBoxW(0, names + '\n\nRevogar TODOS os dispositivos?', 'NEXUS • Dispositivos autorizados', 0x24) == 6:
+        DEVICES.revoke_all(); servermod.reset_input()
+
+
+def open_dashboard(icon=None, item=None):
+    if edge and dashboard: edge.root.after(0,dashboard.show)
+
 def make_menu():
     pad = 'Controle virtual: pronto' if GAMEPAD else 'Controle virtual: indisponível'
     firewall = 'Firewall: liberado' if firewall_ok() else 'Liberar conexão no Firewall'
     return pystray.Menu(
+        pystray.MenuItem('Abrir NEXUS', open_dashboard, default=True),
         pystray.MenuItem(lambda _: f'NEXUS • {local_ip()}:{PORT}', None, enabled=False),
         pystray.MenuItem(lambda _: 'Servidor: ativo' if local_server_ok() else ('Servidor: ' + server_error if server_error else 'Servidor: iniciando'), None, enabled=False),
         pystray.MenuItem(lambda _: 'Celular: conectado' if phone_connected() else 'Celular: aguardando', None, enabled=False),
@@ -776,6 +827,8 @@ def make_menu():
             toggle_autostart
         ),
         pystray.MenuItem('Abrir arquivos do celular', open_phone_files),
+        pystray.MenuItem('Parear celular (PIN temporário)', pair_phone),
+        pystray.MenuItem('Dispositivos autorizados / revogar', manage_devices),
         pystray.MenuItem('Abrir Downloads', open_downloads),
         pystray.MenuItem('Sair', stop)
     )
@@ -795,28 +848,57 @@ def start_tray():
 def run_server():
     global server, server_error
     try:
-        server = ThreadingHTTPServer(('0.0.0.0', PORT), CompanionHandler)
+        server = servermod.SecureHTTPServer(('0.0.0.0', PORT), CompanionHandler)
         server.serve_forever()
     except OSError as e:
         server_error = 'Servidor NEXUS já estava ativo' if local_server_ok() else 'Porta 8765 indisponível: ' + str(e)
     except Exception as e:
         server_error = str(e)
+        __import__('logging').getLogger('nexus').exception('Server startup failed')
 
 
 def start_services():
     servermod.screenshot_original = servermod.screenshot
     servermod.screenshot = fast_screenshot
-    cleanup_legacy_staging()
+    # Never move arbitrary files from the user's existing transfer directory.
+    threading.Thread(target=servermod.input_watchdog, daemon=True, name='InputWatchdog').start()
     threading.Thread(target=capture_loop, daemon=True, name='NexusCapture').start()
     threading.Thread(target=run_discovery_responder, daemon=True, name='DiscoveryResponder').start()
     threading.Thread(target=run_server, daemon=True, name='RemoteServer').start()
 
 
-if __name__ == '__main__':
+def configure_logging():
+    import logging
+    from logging.handlers import RotatingFileHandler
+    from security import DATA
+    handler=RotatingFileHandler(DATA.parent/'nexus.log',maxBytes=1024*1024,backupCount=3,encoding='utf-8')
+    handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+    logging.getLogger('nexus').addHandler(handler)
+    logging.getLogger('nexus').setLevel(logging.INFO)
+    logging.getLogger('nexus').info('NEXUS 2.0 companion started')
+
+
+def main():
+    global edge, dashboard
+    if '--self-test' in sys.argv:
+        # Runs the bundled program on CI without changing input or power state.
+        import json
+        from security import tls_context
+        tls_context()
+        result={'tls':len(fingerprint())==64,'tray':make_menu() is not None,'capture_module':mss is not None}
+        Path(sys.argv[sys.argv.index('--self-test')+1]).write_text(json.dumps(result))
+        sys.exit(0 if all(result.values()) else 1)
+    configure_logging()
     first_run_autostart_prompt()
     start_services(); start_tray()
     edge = DropEdge()
+    from companion_ui import Dashboard
+    dashboard = Dashboard(edge.root,sys.modules[__name__])
     try:
         edge.run()
     finally:
         stop()
+
+
+if __name__ == "__main__":
+    main()

@@ -25,14 +25,7 @@ object Discovery {
     suspend fun checkHost(host: String): Boolean = withContext(Dispatchers.IO) {
         val ip = host.trim().removePrefix("http://").removePrefix("https://").substringBefore(':').substringBefore('/')
         if (ip.isBlank()) return@withContext false
-        try {
-            val c = URL("http://$ip:8765/ping").openConnection() as HttpURLConnection
-            c.connectTimeout = 700
-            c.readTimeout = 900
-            c.useCaches = false
-            val ok = c.responseCode == 200 && c.inputStream.use { it.bufferedReader().readText() }.contains("PC Remote")
-            c.disconnect(); ok
-        } catch (_: Exception) { false }
+        SecureConnection.probe(ip)
     }
 
     private suspend fun udpDiscover(): String? = withContext(Dispatchers.IO) {
@@ -50,7 +43,7 @@ object Discovery {
                 val replyAddress = response.address?.hostAddress
                 val text = String(response.data, 0, response.length)
                 // The packet source is more reliable than an advertised adapter address on PCs with VPN/Wi-Fi/Ethernet.
-                replyAddress ?: if (text.startsWith("NEXUS|")) text.split('|').getOrNull(1) else null
+                if (text.startsWith("NEXUS|")) replyAddress else null
             }
         } catch (_: Exception) { null }
     }

@@ -27,7 +27,7 @@ class PhoneInboxService:Service(){
   super.onCreate()
   foreground()
   thread(start=true,name="PhoneInbox"){poll()}
-  thread(start=true,name="PhoneFiles"){servePhoneFiles()}
+  if(getSharedPreferences("nexus_flow",MODE_PRIVATE).getBoolean("legacy_bridge",false)) thread(start=true,name="PhoneFiles"){servePhoneFiles()}
  }
  private fun foreground(){
   val id="phone_inbox"
@@ -57,24 +57,10 @@ class PhoneInboxService:Service(){
 
  private fun receive(name:String){
   val encoded=URLEncoder.encode(name,"UTF-8").replace("+","%20")
-  val data=RemoteClient.get("/outbox/$encoded",120000)?:return
-  val type=mime(name)
-  val (collection,relative)=when{
-   type.startsWith("image/")->MediaStore.Images.Media.EXTERNAL_CONTENT_URI to (Environment.DIRECTORY_PICTURES+"/NEXUS")
-   type.startsWith("video/")->MediaStore.Video.Media.EXTERNAL_CONTENT_URI to (Environment.DIRECTORY_MOVIES+"/NEXUS")
-   else->MediaStore.Downloads.EXTERNAL_CONTENT_URI to (Environment.DIRECTORY_DOWNLOADS+"/NEXUS")
-  }
-  val values=ContentValues().apply{
-   put(MediaStore.MediaColumns.DISPLAY_NAME,name)
-   put(MediaStore.MediaColumns.MIME_TYPE,type)
-   put(MediaStore.MediaColumns.RELATIVE_PATH,relative)
-  }
-  val uri=contentResolver.insert(collection,values)?:return
-  try{
-   contentResolver.openOutputStream(uri)?.use{it.write(data)}?:return
+  if(DownloadStorage.save(this,name,mime(name),"/outbox/$encoded")) {
    RemoteClient.post("/outbox-ack/$encoded",ByteArray(0))
-   notifyReceived(name,relative)
-  }catch(_:Exception){contentResolver.delete(uri,null,null)}
+   notifyReceived(name,"Downloads/NEXUS")
+  }
  }
 
  private fun notifyReceived(name:String,relative:String){
@@ -103,15 +89,20 @@ class PhoneInboxService:Service(){
  private fun handleClient(socket:Socket){
   socket.use{s->
    try{
+    s.soTimeout=5000
     val peer=s.inetAddress?.hostAddress?.removePrefix("::ffff:").orEmpty()
     val expected=Api.host.trim().removePrefix("::ffff:")
-    if(expected.isBlank() || peer!=expected){
+    if(!Api.connected || expected.isBlank() || peer!=expected){
      sendStatus(s,403,"Forbidden")
      return
     }
     val input=BufferedInputStream(s.getInputStream())
     val request=readHttpLine(input)?:return
-    while(true){val line=readHttpLine(input)?:break;if(line.isBlank())break}
+    var count=0
+    while(true){
+     val line=readHttpLine(input)?:break;if(line.isBlank())break
+     if(++count>40 || line.startsWith("Origin:",true)) {sendStatus(s,403,"Forbidden");return}
+    }
     val target=request.split(' ').getOrNull(1)?:"/"
     when{
      target.startsWith("/file?")->serveFile(s,target)
@@ -127,6 +118,7 @@ class PhoneInboxService:Service(){
   while(true){
    val b=input.read();if(b<0)return if(out.isEmpty())null else out.toString()
    if(b==10)break
+   if(out.length>8192)throw java.io.IOException("Header too long")
    if(b!=13)out.append(b.toChar())
   }
   return out.toString()

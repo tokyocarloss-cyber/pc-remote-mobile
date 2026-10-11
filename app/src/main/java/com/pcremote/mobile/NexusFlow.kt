@@ -73,6 +73,11 @@ fun NexusFlowEdge(go:(Int)->Unit){
     var status by remember{mutableStateOf("")}
     val enabled=remember(open){prefs.getStringSet("actions",DefaultFlowActionIds)?.toSet()?:DefaultFlowActionIds}
     var dragTotal by remember{mutableFloatStateOf(0f)}
+    var confirmSleep by remember { mutableStateOf(false) }
+    if(confirmSleep) AlertDialog(onDismissRequest={confirmSleep=false}, title={Text("Suspender PC?")},
+        text={Text("A conexão será interrompida.")},
+        confirmButton={TextButton(onClick={confirmSleep=false;scope.launch(Dispatchers.IO){Api.post("/power","sleep")}}){Text("CONFIRMAR")}},
+        dismissButton={TextButton(onClick={confirmSleep=false}){Text("CANCELAR")}})
 
     Box(Modifier.fillMaxSize()){
         Box(
@@ -133,7 +138,7 @@ fun NexusFlowEdge(go:(Int)->Unit){
                                             "desktop"->scope.launch(Dispatchers.IO){Api.post("/hotkey","WIN_D")}
                                             "taskmgr"->scope.launch(Dispatchers.IO){Api.post("/hotkey","CTRL_SHIFT_ESC")}
                                             "mute"->scope.launch(Dispatchers.IO){Api.post("/key","VOLUME_MUTE")}
-                                            "sleep"->scope.launch(Dispatchers.IO){Api.post("/power","sleep")}
+                                            "sleep"->{confirmSleep=true}
                                             else->{a.page?.let(go);open=false}
                                         }
                                     }
@@ -380,31 +385,9 @@ private fun fileIcon(name:String)=when(name.substringAfterLast('.', "").lowercas
 }
 
 private suspend fun capturePcToGallery(ctx:Context):Boolean=withContext(Dispatchers.IO){
-    try{
-        val data=RemoteClient.get("/capture.jpg")?:return@withContext false
-        val name="NEXUS_${System.currentTimeMillis()}.jpg"
-        val values=ContentValues().apply{
-            put(MediaStore.Images.Media.DISPLAY_NAME,name)
-            put(MediaStore.Images.Media.MIME_TYPE,"image/jpeg")
-            put(MediaStore.Images.Media.RELATIVE_PATH,Environment.DIRECTORY_PICTURES+"/NEXUS")
-        }
-        val uri=ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values)?:return@withContext false
-        ctx.contentResolver.openOutputStream(uri)?.use{it.write(data)}?:return@withContext false
-        true
-    }catch(_:Exception){false}
+    runCatching { DownloadStorage.save(ctx,"NEXUS_${System.currentTimeMillis()}.jpg","image/jpeg","/capture.jpg") }.getOrDefault(false)
 }
 
 private suspend fun downloadPcFile(ctx:Context,entry:PcFsItem):Boolean=withContext(Dispatchers.IO){
-    try{
-        val encoded=URLEncoder.encode(entry.path,"UTF-8")
-        val data=RemoteClient.get("/fs/download?path=$encoded",120000)?:return@withContext false
-        val values=ContentValues().apply{
-            put(MediaStore.Downloads.DISPLAY_NAME,entry.name)
-            put(MediaStore.Downloads.MIME_TYPE,"application/octet-stream")
-            put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/NEXUS")
-        }
-        val uri=ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values)?:return@withContext false
-        ctx.contentResolver.openOutputStream(uri)?.use{it.write(data)}?:return@withContext false
-        true
-    }catch(_:Exception){false}
+    runCatching { DownloadStorage.save(ctx,entry.name,"application/octet-stream","/fs/download?path="+URLEncoder.encode(entry.path,"UTF-8")) }.getOrDefault(false)
 }

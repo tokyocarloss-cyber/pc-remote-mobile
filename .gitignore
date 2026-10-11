@@ -8,3 +8,9 @@
 .externalNativeBuild
 .cxx
 app/build/
+
+__pycache__/
+*.pyc
+.gradle/
+**/build/
+local.properties

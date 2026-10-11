@@ -49,27 +49,32 @@ fun PcDrop() {
     var text by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("Pronto para enviar") }
     var edgeOn by remember { mutableStateOf(false) }
+    var sending by remember { mutableStateOf(false) }
+    var progress by remember { mutableFloatStateOf(0f) }
+    val cancelled = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
 
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         status = if (granted) "Notificações autorizadas" else "Notificações desativadas"
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri != null) {
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNotEmpty()) {
+            cancelled.set(false); sending = true; progress = 0f
             scope.launch(Dispatchers.IO) {
-                status = "Enviando arquivo…"
+                var sent = 0
                 try {
-                    val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: byteArrayOf()
-                    val name = fileName(ctx, uri).takeLast(180)
-                    if (bytes.isEmpty()) {
-                        status = "Arquivo vazio ou sem permissão de leitura"
-                    } else {
-                        val ok = RemoteClient.post("/upload/" + URLEncoder.encode(name, "UTF-8"), bytes)
-                        status = if (ok) "Enviado: $name (${bytes.size / 1024} KB)" else "Falha no envio"
+                    for (uri in uris) {
+                        if (cancelled.get()) break
+                        val name = fileName(ctx, uri).takeLast(180)
+                        status = "Preparando $name…"
+                        val ok = RemoteClient.upload(ctx,uri,name,cancelled) { done,total ->
+                            progress = if (total > 0) done.toFloat()/total else 0f
+                            status = "$name • ${done/1024} / ${total/1024} KB"
+                        }
+                        if (ok) sent++ else if (!cancelled.get()) { status = RemoteClient.lastError; break }
                     }
-                } catch (_: Exception) {
-                    status = "Falha no envio"
-                }
+                    status = if (cancelled.get()) "Cancelado • $sent enviado(s)" else "$sent de ${uris.size} arquivo(s) enviado(s)"
+                } finally { sending = false }
             }
         }
     }
@@ -119,13 +124,17 @@ fun PcDrop() {
                 Box(Modifier.size(8.dp).background(if (edgeOn) NexusUi.Success else NexusUi.Muted, CircleShape)); Spacer(Modifier.width(8.dp)); Text(status, color = NexusUi.Text, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
             }
         }
-        Button(onClick = { picker.launch("*/*") }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = NexusUi.AccentStrong)) {
+        Button(enabled = !sending && Api.connected, onClick = { picker.launch("*/*") }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = NexusUi.AccentStrong)) {
             Icon(Icons.Default.CloudUpload, null, Modifier.size(19.dp)); Spacer(Modifier.width(8.dp)); Text("ESCOLHER ARQUIVO", fontWeight = FontWeight.Bold)
+        }
+        if (sending) {
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            TextButton(onClick = { cancelled.set(true) }) { Text("CANCELAR ENVIO") }
         }
         OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Texto ou link") }, minLines = 3, maxLines = 6, shape = RoundedCornerShape(18.dp), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = NexusUi.Accent.copy(alpha = .7f), unfocusedBorderColor = NexusUi.Border, focusedContainerColor = NexusUi.Panel, unfocusedContainerColor = NexusUi.Panel))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { scope.launch(Dispatchers.IO) { val ok = RemoteClient.post("/clipboard", text.toByteArray()); status = if (ok) "Texto copiado no PC" else "Falha ao copiar" } }, modifier = Modifier.weight(1f).height(46.dp), shape = RoundedCornerShape(15.dp)) { Icon(Icons.Default.ContentCopy, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("COPIAR") }
-            Button(onClick = { scope.launch(Dispatchers.IO) { Api.post("/text", text); status = if (Api.connected) "Texto digitado no PC" else "Falha ao digitar" } }, modifier = Modifier.weight(1f).height(46.dp), shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = NexusUi.AccentStrong)) { Icon(Icons.Default.Keyboard, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("DIGITAR") }
+            Button(onClick = { scope.launch(Dispatchers.IO) { val ok = Api.post("/text", text); status = if (ok) "Texto digitado no PC" else "Falha ao digitar" } }, modifier = Modifier.weight(1f).height(46.dp), shape = RoundedCornerShape(15.dp), colors = ButtonDefaults.buttonColors(containerColor = NexusUi.AccentStrong)) { Icon(Icons.Default.Keyboard, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("DIGITAR") }
         }
         Spacer(Modifier.height(4.dp))
     }
