@@ -44,6 +44,17 @@ A tentativa anterior 2.0 removia mais de 6.500 linhas e substituía recursos ava
 - Linux: 13 testes passam, um teste DPAPI é ignorado explicitamente.
 - Android: quatro testes JVM de pin e acumulador; compilação debug e lint passaram. Avisos de lint herdados ainda existem.
 - EXE: PyInstaller compilou; executável empacotado executou `--self-test`, incluindo criação de TLS, imports e recursos básicos. Isso não comprova todos os fluxos gráficos.
-- Emulador API 35: teste automatizado de temas, navegação, orientação e pareamento TLS foi adicionado. Consulte o resultado da execução correspondente ao commit: uma tentativa encontrou ANR do Pixel Launcher do emulador, documentado nas capturas. Não confundir teste criado com teste aprovado.
+- Emulador API 35: execução final `38150606143` aprovada: dez temas, dez destinos, rotação, rejeição de PIN incorreto, pareamento TLS e reconexão com credencial persistida após reiniciar o processo. Nenhum crash Java detectado. A tentativa anterior bloqueada por ANR do Pixel Launcher foi corrigida na preparação do emulador. As capturas finais foram inspecionadas. Rotação ainda pode retornar à tela inicial; preservar a tela atual é uma melhoria pendente.
+- Relatório final Android: quatro testes, zero falhas, zero ignorados; lint sem erros e com 85 avisos. Os 70 arquivos WAV foram confirmados dentro do APK.
 
 Os relatórios e capturas ficam nos artefatos de Actions. O APK disponível sem secrets de release é assinado para debug. Não houve teste físico no celular/PC do proprietário; siga [TESTE-NO-APARELHO.md](TESTE-NO-APARELHO.md). Esta entrega é beta, não conclusão de todas as funcionalidades solicitadas.
+
+## Binários validados
+
+Código Android: `dc5cfafbe96ad1bcd0983c399776b2cec417e294`. Código Windows: `98cd11e40c86f153f56cee3da4803e8d11339702`; não houve alteração Windows posterior.
+
+- [APK debug](https://github.com/tokyocarloss-cyber/pc-remote-mobile/actions/runs/38150606143/artifacts/11706653710) — 18.131.914 bytes; SHA-256 `6a54591d2229aa229ad95ba6bc1d098786ff9a81430a6777f92557881f193d64`.
+- [EXE Windows x64](https://github.com/tokyocarloss-cyber/pc-remote-mobile/actions/runs/38150007856/artifacts/11706028520) — 25.870.833 bytes; SHA-256 `fd161ad24989bd9487b7ae06fd1e5acfaa0ad243c3f422af6ea51a124deebc14`.
+- [Capturas e logs do emulador](https://github.com/tokyocarloss-cyber/pc-remote-mobile/actions/runs/38150606143/artifacts/11705843744).
+
+Os downloads do GitHub são ZIPs; os hashes acima são dos binários extraídos. Artefatos sujeitos ao prazo de retenção do Actions.
