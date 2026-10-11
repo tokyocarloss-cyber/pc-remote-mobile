@@ -59,8 +59,7 @@ fun TextRemote() {
                 Button(
                     onClick = {
                         scope.launch(Dispatchers.IO) {
-                            Api.post("/text", value)
-                            sent = Api.connected
+                            sent = Api.post("/text", value)
                         }
                     },
                     enabled = value.isNotBlank(),

@@ -97,6 +97,14 @@ private fun NexusV2App() {
     val ctx = LocalContext.current
     val activity = androidx.activity.compose.LocalActivity.current
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val feedback=remember { SnackbarHostState() }
+    LaunchedEffect(RemoteClient.lastError) {
+        if(RemoteClient.lastError.isNotBlank()) {
+            NexusEffects.play(ctx,NexusEffect.ERROR)
+            feedback.showSnackbar(RemoteClient.lastError)
+        }
+    }
+
 
     var foreground by remember { mutableStateOf(true) }
     DisposableEffect(activity) {
@@ -194,6 +202,7 @@ private fun NexusV2App() {
         if (!NexusFullscreen.active) {
             NexusFlowEdge { page = it }
         }
+        SnackbarHost(feedback,modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=80.dp))
     }
 }
 

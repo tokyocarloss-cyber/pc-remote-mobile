@@ -274,6 +274,8 @@ def encode_frame(im):
 def capture_loop():
     global FRAME_BYTES, FRAME_SEQ, CAPTURE_ERROR, CAPTURE_SOURCE
     while True:
+        if time.monotonic() - getattr(servermod, 'LAST_SCREEN', 0) > 3:
+            time.sleep(.2); continue
         started = time.perf_counter()
         data = b''
         try:
@@ -852,6 +854,7 @@ def run_server():
         server_error = 'Servidor NEXUS já estava ativo' if local_server_ok() else 'Porta 8765 indisponível: ' + str(e)
     except Exception as e:
         server_error = str(e)
+        __import__('logging').getLogger('nexus').exception('Server startup failed')
 
 
 def start_services():
@@ -864,7 +867,19 @@ def start_services():
     threading.Thread(target=run_server, daemon=True, name='RemoteServer').start()
 
 
-if __name__ == '__main__':
+def configure_logging():
+    import logging
+    from logging.handlers import RotatingFileHandler
+    from security import DATA
+    handler=RotatingFileHandler(DATA.parent/'nexus.log',maxBytes=1024*1024,backupCount=3,encoding='utf-8')
+    handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+    logging.getLogger('nexus').addHandler(handler)
+    logging.getLogger('nexus').setLevel(logging.INFO)
+    logging.getLogger('nexus').info('NEXUS 2.0 companion started')
+
+
+def main():
+    global edge, dashboard
     if '--self-test' in sys.argv:
         # Runs the bundled program on CI without changing input or power state.
         import json
@@ -873,6 +888,7 @@ if __name__ == '__main__':
         result={'tls':len(fingerprint())==64,'tray':make_menu() is not None,'capture_module':mss is not None}
         Path(sys.argv[sys.argv.index('--self-test')+1]).write_text(json.dumps(result))
         sys.exit(0 if all(result.values()) else 1)
+    configure_logging()
     first_run_autostart_prompt()
     start_services(); start_tray()
     edge = DropEdge()
@@ -882,3 +898,7 @@ if __name__ == '__main__':
         edge.run()
     finally:
         stop()
+
+
+if __name__ == "__main__":
+    main()

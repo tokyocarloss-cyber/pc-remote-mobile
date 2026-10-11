@@ -354,7 +354,9 @@ class H(BaseHTTPRequestHandler):
    else:return self.sendb(b'',code=404)
    return self.sendb()
   except (ValueError,UnicodeError,TypeError) as e:return self.sendb(str(e).encode(),code=400)
-  except Exception:return self.sendb(b'Command failed',code=500)
+  except Exception:
+   __import__('logging').getLogger('nexus').exception('Remote command failed')
+   return self.sendb(b'Command failed',code=500)
  def log_message(self,*a):pass
 
 class SecureHTTPServer(SecureServerMixin,ThreadingHTTPServer):
@@ -366,4 +368,6 @@ def run_server():
  threading.Thread(target=run_discovery_responder,daemon=True,name='NexusDiscovery').start()
  threading.Thread(target=input_watchdog,daemon=True).start()
  SecureHTTPServer(('0.0.0.0',PORT),H).serve_forever()
-if __name__=='__main__':run_server()
+if __name__=='__main__':
+ from companion_v2 import main
+ main()

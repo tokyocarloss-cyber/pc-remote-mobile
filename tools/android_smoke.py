@@ -28,7 +28,7 @@ for i,theme in enumerate(['NEXUS Neon','Attack on Titan','Frutiger Aero','Dark S
     shell('am','force-stop',PACKAGE)
     shell('run-as',PACKAGE,'mkdir','-p','shared_prefs')
     pref='<map><string name="theme">'+escape(theme)+'</string><boolean name="theme_sounds" value="false"/></map>'
-    adb('shell','run-as',PACKAGE,'sh','-c','cat > shared_prefs/nexus_settings.xml',input=pref.encode())
+    adb('shell',f"run-as {PACKAGE} sh -c 'cat > shared_prefs/nexus_settings.xml'",input=pref.encode())
     launch();screenshot(f'theme-{i:02}')
 for label in ['Apps','Mouse','Controle','Início']:
     tap(label);screenshot('page-'+label)
@@ -37,6 +37,37 @@ for label in ['Arquivos','Tela','Teclado','Mídia','Configurações','Flow']:
 shell('settings','put','system','accelerometer_rotation','0')
 shell('settings','put','system','user_rotation','1');time.sleep(2);screenshot('landscape')
 shell('settings','put','system','user_rotation','0')
+# Exercise the real Android pinned-TLS transport, PIN failure, Keystore save and reconnect.
+fixture=subprocess.Popen(['python','tools/emulator_pc_fixture.py'])
+try:
+    for _ in range(30):
+        if Path('fixture-ready').exists():break
+        time.sleep(.2)
+    assert Path('fixture-ready').exists(),'TLS fixture did not start'
+    shell('am','force-stop',PACKAGE)
+    secure='<map><string name="last_host">10.0.2.2</string></map>'
+    adb('shell',f"run-as {PACKAGE} sh -c 'cat > shared_prefs/nexus_secure.xml'",input=secure.encode())
+    launch()
+    def tap_class(name):
+        for node in nodes().iter('node'):
+            if node.get('class')==name:
+                box=list(map(int,re.findall(r'\d+',node.get('bounds'))))
+                shell('input','tap',str((box[0]+box[2])//2),str((box[1]+box[3])//2));return
+        raise AssertionError('UI class not found: '+name)
+    tap_class('android.widget.CheckBox')
+    tap_class('android.widget.EditText');shell('input','text','000000');shell('input','keyevent','4')
+    tap('AUTORIZAR');time.sleep(1)
+    assert 'PIN inválido' in ET.tostring(nodes(),encoding='unicode'),'Wrong PIN was not rejected'
+    tap_class('android.widget.EditText');shell('input','keyevent','123')
+    for _ in range(6):shell('input','keyevent','67')
+    shell('input','text','123456');shell('input','keyevent','4');tap('AUTORIZAR');time.sleep(2)
+    assert 'Conectado' in ET.tostring(nodes(),encoding='unicode'),'TLS pairing failed'
+    screenshot('paired-tls')
+    shell('am','force-stop',PACKAGE);launch();time.sleep(2)
+    assert 'Conectado' in ET.tostring(nodes(),encoding='unicode'),'Persisted Keystore reconnect failed'
+    screenshot('reconnected-tls')
+finally:
+    fixture.terminate();fixture.wait(timeout=10)
 crashes=shell('logcat','-d','-b','crash');(OUT/'crash-log.txt').write_text(crashes)
 assert 'FATAL EXCEPTION' not in crashes,crashes
-(OUT/'result.txt').write_text('PASS: 10 themes, 10 destinations, rotation, no Java crash. No physical-PC input assertion.\n')
+(OUT/'result.txt').write_text('PASS: 10 themes, 10 destinations, rotation, wrong PIN rejected, TLS pairing and persisted reconnect, no Java crash. No physical-PC input assertion.\n')
