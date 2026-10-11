@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -65,11 +66,12 @@ class NexusV2Activity : ComponentActivity() {
 private data class V2Nav(val page: Int, val label: String, val icon: ImageVector)
 private val v2Primary = listOf(
     V2Nav(0,"Início",Icons.Default.Home),
-    V2Nav(1,"Apps",Icons.Default.Apps),
+    V2Nav(10,"Roda",Icons.Default.RadioButtonChecked),
     V2Nav(5,"Mouse",Icons.Default.Mouse),
     V2Nav(2,"Controle",Icons.Default.SportsEsports)
 )
 private val v2Extra = listOf(
+    V2Nav(1,"Apps",Icons.Default.Apps),
     V2Nav(3,"Arquivos",Icons.Default.Folder),
     V2Nav(4,"Tela",Icons.Default.DesktopWindows),
     V2Nav(6,"Teclado",Icons.Default.Keyboard),
@@ -93,7 +95,7 @@ private fun themeMotionMs(): Int = when (NexusUi.currentTheme) {
 
 @Composable
 private fun NexusV2App() {
-    var page by remember { mutableIntStateOf(0) }
+    var page by rememberSaveable { mutableIntStateOf(0) }
     val ctx = LocalContext.current
     val activity = androidx.activity.compose.LocalActivity.current
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -211,6 +213,7 @@ private fun V2Page(page:Int,go:(Int)->Unit){
     when(page){
         0->V2Home(go)
         1->ReferenceLibrary()
+        10->ReferenceLibrary(openWheelOnStart = true)
         2->AdvancedGamepad()
         3->PcDrop()
         4->SmoothLiveScreen()
@@ -246,7 +249,7 @@ private fun V2BottomNav(selected:Int,setPage:(Int)->Unit){
         Row(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=5.dp)){
             v2Primary.forEach{item->V2NavItem(item,selected==item.page,Modifier.weight(1f)){setPage(item.page)}}
             Box(Modifier.weight(1f)){
-                V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(3,4,6,7,8,9),Modifier.fillMaxWidth()){more=true}
+                V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(1,3,4,6,7,8,9),Modifier.fillMaxWidth()){more=true}
                 DropdownMenu(expanded=more,onDismissRequest={more=false},containerColor=NexusUi.PanelRaised,shape=RoundedCornerShape(NexusUi.cardRadius.dp)){
                     v2Extra.forEach{item->DropdownMenuItem(text={Text(item.label,color=NexusUi.Text)},leadingIcon={Icon(item.icon,null,tint=if(selected==item.page)NexusUi.Accent else NexusUi.Muted)},onClick={more=false;setPage(item.page)})}
                 }

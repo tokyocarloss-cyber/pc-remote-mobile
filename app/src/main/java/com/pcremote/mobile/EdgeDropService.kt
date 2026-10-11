@@ -16,13 +16,22 @@ class EdgeDropService: Service() {
  private var wm: WindowManager?=null
  private var target: TextView?=null
  private val channel="pc_drop_edge"
+ private val activateAction="com.pcremote.mobile.ACTIVATE_DROP_EDGE"
+ private var active=false
+ private val deactivate=android.os.Handler(android.os.Looper.getMainLooper())
+ private val deactivateTask=Runnable { setDropActive(false) }
  override fun onBind(intent:Intent?):IBinder?=null
  override fun onCreate(){super.onCreate();startForegroundMode();showTarget()}
+ override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
+  if(intent?.action==activateAction){setDropActive(true);deactivate.removeCallbacks(deactivateTask);deactivate.postDelayed(deactivateTask,20000)}
+  return START_STICKY
+ }
 
  private fun startForegroundMode(){
   val nm=getSystemService(NotificationManager::class.java)
   nm.createNotificationChannel(NotificationChannel(channel,"NEXUS Drop Edge",NotificationManager.IMPORTANCE_LOW))
-  val n=Notification.Builder(this,channel).setContentTitle("NEXUS Drop Edge ativo").setContentText("Arraste conteúdo para o topo ou compartilhe com NEXUS").setSmallIcon(android.R.drawable.stat_sys_upload).build()
+  val action=PendingIntent.getService(this,42,Intent(this,EdgeDropService::class.java).setAction(activateAction),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+  val n=Notification.Builder(this,channel).setContentTitle("NEXUS Drop Edge").setContentText("Área livre. Ative o destino somente para enviar arquivos.").setSmallIcon(android.R.drawable.stat_sys_upload).addAction(Notification.Action.Builder(null,"Ativar destino (20 s)",action).build()).build()
   startForeground(41,n)
  }
 
@@ -56,10 +65,20 @@ class EdgeDropService: Service() {
   }
   val p=WindowManager.LayoutParams(
    WindowManager.LayoutParams.MATCH_PARENT,h,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-   WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+   WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
    PixelFormat.TRANSLUCENT
   ).apply{gravity=Gravity.TOP or Gravity.START;x=0;y=0}
   runCatching{wm?.addView(target,p)}
+ }
+ private fun setDropActive(enable:Boolean){
+  active=enable
+  val view=target?:return
+  val params=view.layoutParams as? WindowManager.LayoutParams ?:return
+  params.flags=if(enable) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv() else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+  view.text=if(enable)"↑ SOLTE AQUI PARA ENVIAR AO PC" else ""
+  view.setTextColor(0xFFFFFFFF.toInt())
+  view.setBackgroundColor(if(enable)0xE5121A24.toInt() else 0x01000000)
+  runCatching{wm?.updateViewLayout(view,params)}
  }
 
  private fun notifyResult(ok:Boolean,name:String){
@@ -98,5 +117,5 @@ class EdgeDropService: Service() {
   }catch(_:Exception){notifyResult(false,name)}
  }
 
- override fun onDestroy(){target?.let{runCatching{wm?.removeView(it)}};super.onDestroy()}
+ override fun onDestroy(){deactivate.removeCallbacks(deactivateTask);target?.let{runCatching{wm?.removeView(it)}};super.onDestroy()}
 }
