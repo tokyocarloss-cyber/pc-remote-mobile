@@ -66,6 +66,11 @@ fun NexusSettings() {
         NexusEffects.play(ctx, NexusEffect.SELECT, preview = true)
     }
 
+    var resetPairing by remember { mutableStateOf(false) }
+    if(resetPairing) AlertDialog(onDismissRequest={resetPairing=false},title={Text("Refazer pareamento?")},
+        text={Text("A credencial deste PC será removida do celular. Será necessário conferir o certificado e digitar um novo PIN.")},
+        confirmButton={TextButton(onClick={SecureConnection.forget(Api.host.ifBlank { SecureConnection.lastHost() });resetPairing=false}){Text("REDEFINIR")}},
+        dismissButton={TextButton(onClick={resetPairing=false}){Text("CANCELAR")}})
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -92,6 +97,7 @@ fun NexusSettings() {
                     }
                 }
 
+                TextButton(onClick={resetPairing=true}) { Text("REDEFINIR PAREAMENTO DESTE PC") }
                 OutlinedTextField(
                     value = manualIp,
                     onValueChange = { manualIp = it },
@@ -110,7 +116,7 @@ fun NexusSettings() {
                             scope.launch {
                                 SecureConnection.retryPairing()
                                 val ok = connectToHost(value, "IP manual")
-                                manualResult = if (ok) "Conectado com sucesso" else "Sem resposta na porta 8765. Verifique o NEXUS no PC e o Firewall."
+                                manualResult = if (ok) "Conectado com sucesso" else if(SecureConnection.pendingHost.isNotBlank()) "PC encontrado. Conclua a autorização com PIN." else "Sem conexão autorizada. Verifique o PC, o Firewall e o pareamento."
                             }
                         },
                         enabled = manualIp.isNotBlank(),

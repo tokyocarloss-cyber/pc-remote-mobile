@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private data class PadKey(val id: String, val label: String, val command: String)
 
@@ -35,6 +36,12 @@ fun AdvancedGamepad(overlay: Boolean = false, forceEdit: Boolean = false) {
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val orientationKey = if (landscape) "land" else "port"
     val scope = rememberCoroutineScope()
+    var available by remember { mutableStateOf(false) }
+    LaunchedEffect(Api.host,Api.connected) {
+        available=withContext(Dispatchers.IO) {
+            runCatching { org.json.JSONObject(String(RemoteClient.get("/status") ?: return@withContext false)).optBoolean("gamepad",false) }.getOrDefault(false)
+        }
+    }
 
     val keys = remember {
         listOf(
@@ -103,20 +110,21 @@ fun AdvancedGamepad(overlay: Boolean = false, forceEdit: Boolean = false) {
     LaunchedEffect(profile, orientationKey) { loadProfile(profile) }
 
     fun pad(json: String) {
-        if (!edit) RemoteInput.pad(json)
+        if (!edit && available) RemoteInput.pad(json)
     }
     fun button(k: String, down: Boolean) = pad("{\"kind\":\"button\",\"button\":\"$k\",\"down\":$down}")
     fun trigger(k: String, v: Float) = pad("{\"kind\":\"trigger\",\"trigger\":\"$k\",\"value\":$v}")
     fun stick(k: String, x: Float, y: Float) = pad("{\"kind\":\"stick\",\"stick\":\"$k\",\"x\":$x,\"y\":${-y}}")
 
     DisposableEffect(edit, profile, orientationKey) { onDispose { RemoteInput.reset() } }
-    LaunchedEffect(edit) {
-        while (!edit) {
+    LaunchedEffect(edit,available) {
+        while (!edit && available) {
             RemoteInput.pad("{\"kind\":\"heartbeat\"}")
             kotlinx.coroutines.delay(500)
         }
     }
     Column(Modifier.fillMaxSize()) {
+        if(!overlay && !available) Text("XInput indisponível: conecte ao PC com o driver instalado. Você pode editar o layout.",color=NexusUi.Muted,style=MaterialTheme.typography.labelSmall)
         if (!overlay) Surface(
             color = NexusUi.Panel,
             shape = RoundedCornerShape(18.dp),

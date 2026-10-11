@@ -1,6 +1,6 @@
 """Launch, theme and navigation smoke checks on an actual Android emulator."""
 from pathlib import Path
-import re, subprocess, time, xml.etree.ElementTree as ET
+import atexit, re, subprocess, time, xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 OUT=Path('android-smoke');OUT.mkdir(exist_ok=True)
 PACKAGE='com.pcremote.mobile'
@@ -8,13 +8,22 @@ def adb(*args,**kw):return subprocess.check_output(['adb',*args],timeout=35,**kw
 def shell(*args):return adb('shell',*args).decode(errors='replace')
 def screenshot(name):
     (OUT/(name+'.png')).write_bytes(adb('exec-out','screencap','-p'))
+def collect_diagnostics():
+    try:
+        (OUT/'crash-log.txt').write_text(shell('logcat','-d','-b','crash'))
+        (OUT/'system-log.txt').write_text(shell('logcat','-d','-t','1500'))
+        screenshot('final-state')
+    except Exception as error: print('Diagnostic collection:',error)
+atexit.register(collect_diagnostics)
 def launch():
     shell('am','start','-W','-n',PACKAGE+'/.NexusV2Activity');time.sleep(3)
     state=shell('dumpsys','activity','activities')
     assert PACKAGE in state and shell('pidof',PACKAGE).strip(),'NEXUS process did not start'
 def nodes():
     shell('uiautomator','dump','/sdcard/nexus-ui.xml')
-    xml=shell('cat','/sdcard/nexus-ui.xml');return ET.fromstring(xml)
+    xml=shell('cat','/sdcard/nexus-ui.xml')
+    (OUT/'last-ui.xml').write_text(xml)
+    return ET.fromstring(xml)
 def tap(label):
     for node in nodes().iter('node'):
         if label in (node.get('text'),node.get('content-desc')):
@@ -24,6 +33,8 @@ def tap(label):
 adb('install','-r','app.apk')
 shell('pm','grant',PACKAGE,'android.permission.POST_NOTIFICATIONS')
 shell('logcat','-c')
+# Pixel Launcher can ANR during cold emulator boot; stop that unrelated process.
+shell('am','force-stop','com.google.android.apps.nexuslauncher')
 for i,theme in enumerate(['NEXUS Neon','Attack on Titan','Frutiger Aero','Dark Souls','Anime Prism','Naruto','Cyber Samurai','Sakura Night','Retro CRT','Arctic Glass']):
     shell('am','force-stop',PACKAGE)
     shell('run-as',PACKAGE,'mkdir','-p','shared_prefs')

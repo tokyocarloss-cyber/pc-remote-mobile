@@ -95,6 +95,10 @@ object SecureConnection {
     }
     fun dismiss() { dismissed += pendingHost; pendingHost = "" }
     fun retryPairing() { dismissed.clear() }
+    fun forget(host: String) {
+        prefs().edit().remove("pin:$host").remove("token:$host").apply()
+        factories.clear();dismissed.remove(host);Api.connected=false
+    }
     fun pair(pin: String): Boolean {
         val host = pendingHost; val fingerprint = pendingFingerprint
         val c = connection(host, "/pair", fingerprint)
