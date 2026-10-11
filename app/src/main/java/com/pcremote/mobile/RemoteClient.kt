@@ -98,8 +98,9 @@ object RemoteClient {
 
 @Composable
 fun secureImage(path: String): ByteArray? {
-    val image by produceState<ByteArray?>(null, Api.host, path, Api.connected) {
-        value = withContext(Dispatchers.IO) { RemoteClient.get(path) }
+    val image = remember { mutableStateOf<ByteArray?>(null) }
+    LaunchedEffect(Api.host, path, Api.connected) {
+        image.value = withContext(Dispatchers.IO) { RemoteClient.get(path) }
     }
-    return image
+    return image.value
 }
