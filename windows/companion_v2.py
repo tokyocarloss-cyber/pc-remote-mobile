@@ -21,6 +21,7 @@ from PIL import Image, ImageDraw
 import pc_remote_server as servermod
 from pc_remote_server import PORT, DISCOVERY_PORT, ROOT, GAMEPAD, local_ip, phone_connected, run_discovery_responder
 from drop_edge import DropEdge
+from update_manager import UpdateManager
 
 CREATE_NO_WINDOW = 0x08000000
 TCP_RULE = 'NEXUS PC Remote TCP v4'
@@ -33,6 +34,7 @@ edge = None
 tray_icon = None
 server_error = ''
 dashboard = None
+UPDATER = UpdateManager()
 PHONE_FRAME_LOCK = threading.Lock()
 PHONE_FRAME_BYTES = b''
 PHONE_FRAME_AT = 0.0
@@ -613,6 +615,13 @@ class CompanionHandler(servermod.H):
         if not self.authorized(): return
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        if path == '/update/manifest':
+            return self.sendb(servermod.json.dumps(UPDATER.info()).encode('utf-8'), 'application/json')
+        if path == '/update/android.apk':
+            selected = UPDATER.android_file()
+            if not selected:
+                return self.sendb(b'Nenhum pacote preparado no Windows', code=404)
+            return self.sendfile(selected)
         if path == '/fs/list':
             q = urllib.parse.parse_qs(parsed.query)
             raw_path = q.get('path', [''])[0]
@@ -752,6 +761,20 @@ class CompanionHandler(servermod.H):
             except (ValueError, OSError):
                 self.close_connection = True
                 return self.sendb(b'Invalid mirror frame', code=400)
+        if path == '/update/apply':
+            try:
+                raw = self.body()
+                data = servermod.json.loads(raw)
+                UPDATER.begin_windows_install(
+                    data.get('nonce', ''), data.get('android_sha256', ''),
+                    data.get('windows_sha256', '')
+                )
+                self.sendb(b'Windows pronto para reiniciar e instalar a atualizacao')
+                # Respond first, then close the onefile EXE so the helper can replace it.
+                threading.Timer(1.5, stop).start()
+                return
+            except (ValueError, RuntimeError, OSError) as exc:
+                return self.sendb(str(exc).encode('utf-8'), code=400)
         if path == '/type-live':
             try:
                 body = self.body()
