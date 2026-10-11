@@ -1,6 +1,6 @@
 """Tk dashboard owned by the existing DropEdge main loop (no second Tk thread)."""
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog
 import time
 import io
 from PIL import Image, ImageTk
@@ -29,6 +29,11 @@ class Dashboard:
         ttk.Button(row,text='Downloads',style='Nexus.TButton',command=api.open_downloads).pack(side='left',padx=(0,8))
         ttk.Button(row,text='Firewall',style='Nexus.TButton',command=api.repair_firewall).pack(side='left')
         ttk.Button(box,text='VER TELA DO CELULAR',style='Nexus.TButton',command=self.show_phone).pack(fill='x',pady=8)
+        ttk.Button(box,text='PREPARAR ATUALIZAÇÃO DOS DOIS',style='Nexus.TButton',
+                   command=self.prepare_update).pack(fill='x',pady=(4,4))
+        self.update_info=ttk.Label(box,text='Escolha uma vez os novos instaladores. Depois confirme no celular.',
+                                   style='Nexus.TLabel',wraplength=620)
+        self.update_info.pack(fill='x',pady=(0,6))
         self.phone_window=None
         self.phone_photo=None
         self.pair_info=ttk.Label(box,text='Pareamento fechado. Abra somente quando for conectar seu celular.',style='Nexus.TLabel',wraplength=640)
@@ -43,6 +48,25 @@ class Dashboard:
         ttk.Button(box,text='Minimizar para bandeja',style='Nexus.TButton',command=self.window.withdraw).pack(anchor='e',pady=10)
         self.update()
     def show(self):self.window.deiconify();self.window.lift()
+    def prepare_update(self):
+        # The physical PC user must choose both sources; Android cannot stage arbitrary EXEs.
+        apk = filedialog.askopenfilename(
+            parent=self.window, title='NEXUS: selecione o APK novo',
+            filetypes=[('Android APK','*.apk')])
+        if not apk: return
+        exe = filedialog.askopenfilename(
+            parent=self.window, title='NEXUS: selecione o EXE Windows novo',
+            filetypes=[('Windows EXE','*.exe')])
+        if not exe: return
+        try:
+            manifest=self.api.UPDATER.prepare(apk,exe)
+            self.update_info.configure(
+                text='Atualização preparada por até 60 minutos. Abra Configurações > Atualizar NEXUS no celular conectado.\\n'
+                     'APK: '+manifest['android']['sha256'][:12]+'…  •  EXE: '+manifest['windows']['sha256'][:12]+'…'
+            )
+        except Exception as error:
+            self.update_info.configure(text='Não foi possível preparar: '+str(error))
+
     def show_phone(self):
         if self.phone_window is None or not self.phone_window.winfo_exists():
             self.phone_window=tk.Toplevel(self.window)

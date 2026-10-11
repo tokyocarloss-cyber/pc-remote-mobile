@@ -59,3 +59,48 @@ Estas funções **exigem o Android e o companion Windows desta mesma branch**. N
 
 **Antes da distribuição:** validar compilação Android/Windows, permissões MediaProjection no Android 14+, configuração multi-toque, pausa/encerramento do espelhamento, transferência de arquivos grandes, e limite real de latência no aparelho. O pedido de `MANAGE_EXTERNAL_STORAGE` deve passar por revisão da política da loja na distribuição; para builds fora da loja, a autorização continua manual.
 
+
+## Atualização coordenada Android + Windows (branch PR #6)
+
+**Primeira ativação / bootstrap:** versões antigas ainda não têm o protocolo de atualização.
+Instale uma última vez o NEXUS Android com o recurso de atualização e execute o EXE
+Windows correspondente. A partir dessa versão, o fluxo é:
+
+1. Baixe o próximo par de instaladores NEXUS (APK e EXE) de uma fonte de confiança.
+2. No painel NEXUS do **Windows**, clique em **PREPARAR ATUALIZAÇÃO DOS DOIS** e
+   selecione o APK e o EXE. Os arquivos são copiados para o armazenamento local do
+   Windows; a oferta expira em 60 minutos. Nenhum outro dispositivo pode enviar
+   um EXE para execução remota.
+3. No celular pareado, em **Início > ATUALIZAR NEXUS** ou **Mais > Atualizar**,
+   clique em **VERIFICAR PACOTE** e **ATUALIZAR OS DOIS**. O APK é baixado por TLS
+   certificado/pin verificado, hashes SHA-256 e tamanho são conferidos.
+4. Android exige **mesmo applicationId, assinatura idêntica e versionCode mais
+   recente**; ele mostra a tela de autorização de instalação. Permita "Instalar
+   apps desconhecidos" apenas se confiar no pacote e aceite instalar.
+5. **Somente após o Android emitir MY_PACKAGE_REPLACED** o próprio NEXUS solicita
+   a troca do EXE; o Windows encerra o companion, o ajudante local confirma
+   o hash, copia uma versão de segurança para `<executavel>.nexus-backup`,
+   substitui o EXE e reinicia. Último resultado:
+   `%LOCALAPPDATA%\NEXUS\updates\last-update.txt`.
+6. Se a rede cair depois que o Android instalar, abra a tela Atualizar do
+   Android para tentar mais uma vez o passo final. O pacote no PC pode expirar,
+   então será preciso prepará-lo novamente.
+
+**Limites e avisos cruciais:**
+
+- O Android não permite update silencioso fora de controle empresarial. A
+  confirmação do sistema é **obrigatória**, mesmo para atualização pelo Wi-Fi.
+- **Assinatura Android deve ser estável.** Debug APKs de runners distintos
+  normalmente usam chaves diferentes. Esses arquivos *não atualizam
+  uns aos outros* por cima, portanto o sistema bloqueia tentativa com assinatura
+  divergente antes de atualizar o EXE. Configure os segredos GitHub Actions para
+  gerar APKs release com a **mesma chave guardada em local seguro** em todo build.
+  A primeira migração de debug para release pode exigir desinstalação manual e
+  perda de dados do app (faça backup antes).
+- Windows atualiza o EXE iniciado da pasta onde ele realmente está. Essa pasta
+  deve permitir gravação pelo usuário atual. Requer executar o companion no
+  formato EXE empacotado, não em modo script Python. Não é serviço de atualização
+  com privilégios de administrador.
+- O par de instaladores é escolhido manualmente no PC; não há downloader
+  invisível de terceiros nem promessa de atualizar ambos silenciosamente.
+- A versão atual é **protótipo em validação**, não atualização remota irrestrita.
