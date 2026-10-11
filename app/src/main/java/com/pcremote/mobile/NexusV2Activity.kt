@@ -67,14 +67,15 @@ private data class V2Nav(val page: Int, val label: String, val icon: ImageVector
 private val v2Primary = listOf(
     V2Nav(0,"Início",Icons.Default.Home),
     V2Nav(10,"Roda",Icons.Default.RadioButtonChecked),
-    V2Nav(5,"Mouse",Icons.Default.Mouse),
-    V2Nav(2,"Controle",Icons.Default.SportsEsports)
+    V2Nav(3,"Arquivos",Icons.Default.Folder),
+    V2Nav(6,"Teclado",Icons.Default.Keyboard)
 )
 private val v2Extra = listOf(
     V2Nav(1,"Apps",Icons.Default.Apps),
-    V2Nav(3,"Arquivos",Icons.Default.Folder),
-    V2Nav(4,"Tela",Icons.Default.DesktopWindows),
-    V2Nav(6,"Teclado",Icons.Default.Keyboard),
+    V2Nav(5,"Mouse",Icons.Default.Mouse),
+    V2Nav(2,"Controle",Icons.Default.SportsEsports),
+    V2Nav(4,"Tela PC",Icons.Default.DesktopWindows),
+    V2Nav(11,"Tela celular",Icons.Default.Smartphone),
     V2Nav(8,"Mídia",Icons.Default.MusicNote),
     V2Nav(7,"Configurações",Icons.Default.Settings),
     V2Nav(9,"Flow",Icons.Default.AutoAwesome)
@@ -215,7 +216,8 @@ private fun V2Page(page:Int,go:(Int)->Unit){
         1->ReferenceLibrary()
         10->ReferenceLibrary(openWheelOnStart = true)
         2->AdvancedGamepad()
-        3->PcDrop()
+        3->NexusFilesHub()
+        11->PhoneMirrorScreen()
         4->SmoothLiveScreen()
         5->NotebookTouchpad{go(6)}
         6->TextRemote()
@@ -249,7 +251,7 @@ private fun V2BottomNav(selected:Int,setPage:(Int)->Unit){
         Row(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=5.dp)){
             v2Primary.forEach{item->V2NavItem(item,selected==item.page,Modifier.weight(1f)){setPage(item.page)}}
             Box(Modifier.weight(1f)){
-                V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(1,3,4,6,7,8,9),Modifier.fillMaxWidth()){more=true}
+                V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(1,2,4,5,7,8,9,11),Modifier.fillMaxWidth()){more=true}
                 DropdownMenu(expanded=more,onDismissRequest={more=false},containerColor=NexusUi.PanelRaised,shape=RoundedCornerShape(NexusUi.cardRadius.dp)){
                     v2Extra.forEach{item->DropdownMenuItem(text={Text(item.label,color=NexusUi.Text)},leadingIcon={Icon(item.icon,null,tint=if(selected==item.page)NexusUi.Accent else NexusUi.Muted)},onClick={more=false;setPage(item.page)})}
                 }
@@ -301,7 +303,7 @@ private fun V2Home(go:(Int)->Unit){
 
         val actions=listOf(
             V2Action("Mouse",Icons.Default.Mouse,5,NexusUi.Accent),V2Action("Teclado",Icons.Default.Keyboard,6,NexusUi.Violet),V2Action("Controle",Icons.Default.SportsEsports,2,NexusUi.AccentStrong),
-            V2Action("Tela ao vivo",Icons.Default.DesktopWindows,4,NexusUi.Accent),V2Action("Apps",Icons.Default.Apps,1,NexusUi.Violet),V2Action("Arquivos",Icons.Default.Folder,3,NexusUi.AccentStrong)
+            V2Action("Tela do PC",Icons.Default.DesktopWindows,4,NexusUi.Accent),V2Action("Roda rápida",Icons.Default.RadioButtonChecked,10,NexusUi.Violet),V2Action("Tela celular",Icons.Default.Smartphone,11,NexusUi.AccentStrong)
         )
         actions.chunked(3).forEach{row->Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){row.forEach{item->V2Tile(item.title,item.icon,item.accent,Modifier.weight(1f)){NexusEffects.play(ctx,NexusEffect.TAP);go(item.page)}}}}
         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){
