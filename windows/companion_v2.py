@@ -33,6 +33,14 @@ edge = None
 tray_icon = None
 server_error = ''
 dashboard = None
+PHONE_FRAME_LOCK = threading.Lock()
+PHONE_FRAME_BYTES = b''
+PHONE_FRAME_AT = 0.0
+
+def phone_frame_snapshot():
+    with PHONE_FRAME_LOCK:
+        return PHONE_FRAME_BYTES, PHONE_FRAME_AT
+
 AUTOSTART_VALUE = 'NEXUS PC Remote'
 PREFS_KEY = r'Software\NEXUS PC Remote'
 
@@ -725,6 +733,25 @@ class CompanionHandler(servermod.H):
                 return self.sendb(b'Upload incomplete, invalid, or destination unavailable', code=400)
             finally:
                 if part: part.unlink(missing_ok=True)
+        if path == '/phone-screen/frame':
+            global PHONE_FRAME_BYTES, PHONE_FRAME_AT
+            try:
+                if self.headers.get('Transfer-Encoding'):
+                    raise ValueError('Length required')
+                n = int(self.headers.get('Content-Length', '-1'))
+                if not 128 <= n <= 1500000:
+                    raise ValueError('Invalid screen frame size')
+                frame = self.rfile.read(n)
+                if len(frame) != n or not frame.startswith(b'\\xff\\xd8') or not frame.endswith(b'\\xff\\xd9'):
+                    raise ValueError('Invalid JPEG frame')
+                with PHONE_FRAME_LOCK:
+                    PHONE_FRAME_BYTES = frame
+                    PHONE_FRAME_AT = time.monotonic()
+                servermod.mark_seen(self.client_address[0])
+                return self.sendb(b'OK')
+            except (ValueError, OSError):
+                self.close_connection = True
+                return self.sendb(b'Invalid mirror frame', code=400)
         if path == '/type-live':
             try:
                 body = self.body()
