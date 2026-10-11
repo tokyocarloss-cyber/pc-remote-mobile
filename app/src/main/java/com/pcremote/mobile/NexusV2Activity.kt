@@ -78,7 +78,8 @@ private val v2Extra = listOf(
     V2Nav(11,"Tela celular",Icons.Default.Smartphone),
     V2Nav(8,"Mídia",Icons.Default.MusicNote),
     V2Nav(7,"Configurações",Icons.Default.Settings),
-    V2Nav(9,"Flow",Icons.Default.AutoAwesome)
+    V2Nav(9,"Flow",Icons.Default.AutoAwesome),
+    V2Nav(12,"Atualizar",Icons.Default.SystemUpdate)
 )
 
 private fun themeMotionMs(): Int = when (NexusUi.currentTheme) {
@@ -218,6 +219,10 @@ private fun V2Page(page:Int,go:(Int)->Unit){
         2->AdvancedGamepad()
         3->NexusFilesHub()
         11->PhoneMirrorScreen()
+        12->Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Title("Atualizações NEXUS", "Atualize celular e PC com a conexão segura")
+            NexusUpdater()
+        }
         4->SmoothLiveScreen()
         5->NotebookTouchpad{go(6)}
         6->TextRemote()
@@ -251,7 +256,7 @@ private fun V2BottomNav(selected:Int,setPage:(Int)->Unit){
         Row(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=5.dp)){
             v2Primary.forEach{item->V2NavItem(item,selected==item.page,Modifier.weight(1f)){setPage(item.page)}}
             Box(Modifier.weight(1f)){
-                V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(1,2,4,5,7,8,9,11),Modifier.fillMaxWidth()){more=true}
+                V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(1,2,4,5,7,8,9,11,12),Modifier.fillMaxWidth()){more=true}
                 DropdownMenu(expanded=more,onDismissRequest={more=false},containerColor=NexusUi.PanelRaised,shape=RoundedCornerShape(NexusUi.cardRadius.dp)){
                     v2Extra.forEach{item->DropdownMenuItem(text={Text(item.label,color=NexusUi.Text)},leadingIcon={Icon(item.icon,null,tint=if(selected==item.page)NexusUi.Accent else NexusUi.Muted)},onClick={more=false;setPage(item.page)})}
                 }
@@ -306,6 +311,9 @@ private fun V2Home(go:(Int)->Unit){
             V2Action("Tela do PC",Icons.Default.DesktopWindows,4,NexusUi.Accent),V2Action("Roda rápida",Icons.Default.RadioButtonChecked,10,NexusUi.Violet),V2Action("Tela celular",Icons.Default.Smartphone,11,NexusUi.AccentStrong)
         )
         actions.chunked(3).forEach{row->Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){row.forEach{item->V2Tile(item.title,item.icon,item.accent,Modifier.weight(1f)){NexusEffects.play(ctx,NexusEffect.TAP);go(item.page)}}}}
+        OutlinedButton(onClick={go(12)},modifier=Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.SystemUpdate,null);Spacer(Modifier.width(8.dp));Text("ATUALIZAR NEXUS • CELULAR E PC")
+        }
         Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){
             V2Tile("Desligar",Icons.Default.PowerSettingsNew,Color(0xFFFF5252),Modifier.weight(1f)){power="shutdown"}
             V2Tile("Reiniciar",Icons.Default.RestartAlt,NexusUi.AccentStrong,Modifier.weight(1f)){power="restart"}
