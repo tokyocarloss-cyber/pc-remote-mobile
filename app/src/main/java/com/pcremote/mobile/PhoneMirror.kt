@@ -2,6 +2,7 @@ package com.pcremote.mobile
 
 import android.app.Activity
 import android.app.Notification
+import android.app.PendingIntent
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -88,7 +89,7 @@ fun PhoneMirrorScreen() {
 }
 
 class PhoneMirrorService:Service(){
-    companion object { var active by mutableStateOf(false); private set }
+    companion object { var active by mutableStateOf(false) }
     private val channel="nexus_phone_mirror"
     private val uploading=AtomicBoolean(false)
     private val worker=Executors.newSingleThreadExecutor()
@@ -105,10 +106,14 @@ class PhoneMirrorService:Service(){
             NotificationChannel(channel,"NEXUS • Tela do celular",NotificationManager.IMPORTANCE_LOW))
     }
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
+        if(intent?.action == "NEXUS_STOP_MIRROR") { stopSelf(); return START_NOT_STICKY }
+        val stop=PendingIntent.getService(this,75,Intent(this,PhoneMirrorService::class.java).setAction("NEXUS_STOP_MIRROR"),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification=Notification.Builder(this,channel)
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentTitle("NEXUS: compartilhando tela do celular")
             .setContentText("Volte ao NEXUS para interromper o espelhamento.")
+            .addAction(Notification.Action.Builder(null,"PARAR",stop).build())
             .setOngoing(true).build()
         if(Build.VERSION.SDK_INT>=29)
             startForeground(74,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
