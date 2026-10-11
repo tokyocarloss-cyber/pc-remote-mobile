@@ -1,10 +1,11 @@
 name: Build Windows Companion
 on:
   push:
-    branches: [full-redesign]
+    branches: [full-redesign, 'nexus-v2-stability-sound-*']
     paths:
       - "windows/**"
       - ".github/workflows/build-windows.yml"
+  pull_request:
   workflow_dispatch:
 jobs:
   build:
