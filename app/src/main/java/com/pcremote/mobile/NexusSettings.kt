@@ -54,6 +54,7 @@ fun NexusSettings() {
     var manualResult by remember { mutableStateOf("") }
     var themeName by remember { mutableStateOf(prefs.getString("theme", "NEXUS Neon") ?: "NEXUS Neon") }
     var themeSounds by remember { mutableStateOf(prefs.getBoolean("theme_sounds", true)) }
+    var soundVolume by remember { mutableFloatStateOf(prefs.getInt("sound_volume", 18).toFloat()) }
 
     LaunchedEffect(Unit) { NexusUi.applyTheme(themeName) }
 
@@ -172,6 +173,25 @@ fun NexusSettings() {
                         })
                     }
                 }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.GraphicEq, null, tint = NexusUi.Accent)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Volume dos efeitos", color = NexusUi.Text, modifier = Modifier.weight(1f))
+                    Text(soundVolume.toInt().toString() + "%", color = NexusUi.Muted)
+                }
+                Slider(
+                    value = soundVolume,
+                    onValueChange = { soundVolume = it },
+                    onValueChangeFinished = {
+                        prefs.edit().putInt("sound_volume", soundVolume.toInt()).apply()
+                        NexusEffects.play(ctx, NexusEffect.SELECT)
+                    },
+                    valueRange = 0f..60f,
+                    enabled = themeSounds
+                )
+                Text("Toques e transições usam sons curtos, sem interromper a mídia do celular.",
+                    color = NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
 
                 NexusThemes.forEach { theme ->
                     val selected = themeName == theme.name
