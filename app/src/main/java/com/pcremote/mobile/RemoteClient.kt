@@ -42,7 +42,7 @@ object RemoteClient {
         var c: HttpURLConnection? = null
         var reusable = false
         return try {
-            c = SecureConnection.open(path); c.requestMethod = "POST"; c.readTimeout = 1500; c.doOutput = true
+            c = SecureConnection.open(path); c.requestMethod = "POST"; c.readTimeout = if(path in setOf("/mouse","/scroll","/zoom","/click")) 1500 else 5000; c.doOutput = true
             c.setRequestProperty("Content-Type","application/octet-stream"); c.setFixedLengthStreamingMode(data.size)
             c.outputStream.use { it.write(data) }
             val ok = result(c)
