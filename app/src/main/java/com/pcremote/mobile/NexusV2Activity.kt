@@ -39,7 +39,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class NexusV2Activity : ComponentActivity() {
-    override fun onStop() { RemoteInput.reset(); super.onStop() }
+    override fun onStart() { super.onStart(); RemoteInput.enabled = true }
+    override fun onStop() { RemoteInput.enabled = false; RemoteInput.reset(); super.onStop() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -97,7 +98,18 @@ private fun NexusV2App() {
     val activity = androidx.activity.compose.LocalActivity.current
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    LaunchedEffect(Unit) {
+    var foreground by remember { mutableStateOf(true) }
+    DisposableEffect(activity) {
+        val lifecycle = (activity as? ComponentActivity)?.lifecycle
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if(event == androidx.lifecycle.Lifecycle.Event.ON_START) foreground=true
+            if(event == androidx.lifecycle.Lifecycle.Event.ON_STOP) foreground=false
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
+    LaunchedEffect(foreground) {
+        if(!foreground) return@LaunchedEffect
         while (true) {
             if (!Api.connected) {
                 val saved = SecureConnection.lastHost()
@@ -249,8 +261,6 @@ private data class V2Action(val title:String,val icon:ImageVector,val page:Int,v
 private fun V2Home(go:(Int)->Unit){
     val ctx=LocalContext.current
     val scope=rememberCoroutineScope()
-    var volume by remember{mutableFloatStateOf(70f)}
-    var playing by remember{mutableStateOf(false)}
     var power by remember{mutableStateOf<String?>(null)}
 
     if(power!=null){
@@ -271,7 +281,7 @@ private fun V2Home(go:(Int)->Unit){
                 }
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
                     V2MediaButton(Icons.Default.SkipPrevious,Modifier.weight(1f)){NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_PREV")}}
-                    V2MediaButton(Icons.Default.PlayArrow,Modifier.weight(1f)){playing=!playing;NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_PLAY")}}
+                    V2MediaButton(Icons.Default.PlayArrow,Modifier.weight(1f)){NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_PLAY")}}
                     V2MediaButton(Icons.Default.SkipNext,Modifier.weight(1f)){NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_NEXT")}}
                 }
             }

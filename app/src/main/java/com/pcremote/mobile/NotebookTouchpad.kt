@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.channels.Channel
 import kotlin.math.abs
 import kotlin.math.hypot
 
@@ -32,7 +35,24 @@ fun NotebookTouchpad(openKeyboard: () -> Unit) {
     var multiTouch by remember { mutableStateOf(false) }
     var lastDistance by remember { mutableFloatStateOf(0f) }
 
-    fun post(path: String, body: String) = scope.launch(Dispatchers.IO) { Api.post(path, body) }
+    val motion = remember { MotionAccumulator() }
+    val commands = remember { Channel<Pair<String,String>>(32) }
+    LaunchedEffect(Unit) {
+        while(isActive) {
+            if(!Api.connected) { motion.clear(); while(commands.tryReceive().isSuccess) {} }
+            else {
+                val (dx,dy)=motion.take()
+                val command=commands.tryReceive().getOrNull()
+                withContext(Dispatchers.IO) {
+                    if(dx!=0 || dy!=0) Api.post("/mouse","$dx,$dy")
+                    command?.let { Api.post(it.first,it.second) }
+                }
+            }
+            delay(12)
+        }
+    }
+    DisposableEffect(Unit) { onDispose { commands.close();motion.clear() } }
+    fun post(path: String, body: String) { commands.trySend(path to body) }
 
     Column(Modifier.fillMaxSize()) {
         Title("Touchpad", "Gestos de notebook: 1 dedo, 2 dedos e pinça")
@@ -49,10 +69,10 @@ fun NotebookTouchpad(openKeyboard: () -> Unit) {
                     detectTapGestures(
                         onTap = { post("/click", "left") },
                         onDoubleTap = {
-                            scope.launch(Dispatchers.IO) {
-                                Api.post("/click", "left")
+                            scope.launch {
+                                post("/click", "left")
                                 delay(65)
-                                Api.post("/click", "left")
+                                post("/click", "left")
                             }
                         },
                         onLongPress = { post("/click", "right") }
@@ -62,9 +82,7 @@ fun NotebookTouchpad(openKeyboard: () -> Unit) {
                     detectDragGestures { change, d ->
                         if (multiTouch) return@detectDragGestures
                         change.consume()
-                        val x = (d.x * 1.20f).toInt()
-                        val y = (d.y * 1.20f).toInt()
-                        if (x != 0 || y != 0) post("/mouse", "$x,$y")
+                        motion.add(d.x * 1.20f,d.y * 1.20f)
                     }
                 }
                 .pointerInput(Unit) {

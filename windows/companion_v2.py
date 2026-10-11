@@ -32,6 +32,7 @@ server = None
 edge = None
 tray_icon = None
 server_error = ''
+dashboard = None
 AUTOSTART_VALUE = 'NEXUS PC Remote'
 PREFS_KEY = r'Software\NEXUS PC Remote'
 
@@ -804,10 +805,14 @@ def manage_devices(icon=None, item=None):
         DEVICES.revoke_all(); servermod.reset_input()
 
 
+def open_dashboard(icon=None, item=None):
+    if edge and dashboard: edge.root.after(0,dashboard.show)
+
 def make_menu():
     pad = 'Controle virtual: pronto' if GAMEPAD else 'Controle virtual: indisponível'
     firewall = 'Firewall: liberado' if firewall_ok() else 'Liberar conexão no Firewall'
     return pystray.Menu(
+        pystray.MenuItem('Abrir NEXUS', open_dashboard, default=True),
         pystray.MenuItem(lambda _: f'NEXUS • {local_ip()}:{PORT}', None, enabled=False),
         pystray.MenuItem(lambda _: 'Servidor: ativo' if local_server_ok() else ('Servidor: ' + server_error if server_error else 'Servidor: iniciando'), None, enabled=False),
         pystray.MenuItem(lambda _: 'Celular: conectado' if phone_connected() else 'Celular: aguardando', None, enabled=False),
@@ -860,9 +865,19 @@ def start_services():
 
 
 if __name__ == '__main__':
+    if '--self-test' in sys.argv:
+        # Runs the bundled program on CI without changing input or power state.
+        import json
+        from security import tls_context
+        tls_context()
+        result={'tls':len(fingerprint())==64,'tray':make_menu() is not None,'capture_module':mss is not None}
+        Path(sys.argv[sys.argv.index('--self-test')+1]).write_text(json.dumps(result))
+        sys.exit(0 if all(result.values()) else 1)
     first_run_autostart_prompt()
     start_services(); start_tray()
     edge = DropEdge()
+    from companion_ui import Dashboard
+    dashboard = Dashboard(edge.root,sys.modules[__name__])
     try:
         edge.run()
     finally:

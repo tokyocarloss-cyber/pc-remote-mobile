@@ -61,8 +61,8 @@ fun SmoothLiveScreen() {
     var controlsEdit by remember { mutableStateOf(false) }
     val quality = ScreenQualities[qualityIndex]
 
-    fun registerFrame(bytes: ByteArray) {
-        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+    suspend fun registerFrame(bytes: ByteArray) {
+        val bmp = withContext(Dispatchers.IO) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) } ?: return
         frame = bmp.asImageBitmap()
         Api.connected = true
         count++
@@ -79,7 +79,7 @@ fun SmoothLiveScreen() {
     fun clickAt(pos: Offset, double: Boolean = false) {
         val s = viewport
         if (s.width <= 0 || s.height <= 0) return
-        val imageAspect = quality.w.toFloat() / quality.h.toFloat()
+        val imageAspect = frame?.let { it.width.toFloat() / it.height.toFloat() } ?: return
         val boxAspect = s.width.toFloat() / s.height.toFloat()
         val drawW: Float
         val drawH: Float

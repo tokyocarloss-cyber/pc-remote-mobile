@@ -5,6 +5,7 @@ import kotlinx.coroutines.channels.Channel
 
 /** Serial gamepad transitions survive disposal of the composable that created them. */
 object RemoteInput {
+    @Volatile var enabled = true
     private data class Command(val host: String, val body: String)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val queue = Channel<Command>(64)
@@ -16,6 +17,7 @@ object RemoteInput {
         }
     }
     fun pad(body: String) {
+        if(!enabled && !body.contains("reset")) return
         if (queue.trySend(Command(Api.host,body)).isFailure) {
             while (queue.tryReceive().isSuccess) { }
             queue.trySend(Command(Api.host,"{\"kind\":\"reset\"}"))

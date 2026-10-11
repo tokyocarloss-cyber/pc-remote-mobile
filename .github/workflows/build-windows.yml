@@ -56,6 +56,14 @@ jobs:
           if (-not (Select-String -Path archive.txt -Pattern "PIL" -Quiet)) { throw "Pillow was not bundled into the EXE" }
           if (-not (Select-String -Path archive.txt -Pattern "tkinterdnd2" -Quiet)) { throw "tkinterdnd2 was not bundled into the EXE" }
           if (-not (Select-String -Path archive.txt -Pattern "mss" -Quiet)) { throw "MSS was not bundled into the EXE" }
+      - name: Smoke test packaged EXE
+        shell: powershell
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP "nexus-smoke.json"
+          $process = Start-Process -FilePath "dist\NEXUS PC Remote.exe" -ArgumentList @("--self-test", $report) -PassThru
+          if (-not $process.WaitForExit(45000)) { $process.Kill(); throw "EXE startup timed out" }
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw "EXE smoke test failed" }
+          Get-Content $report
       - uses: actions/upload-artifact@v4
         with:
           name: NEXUS-PC-Remote-Windows
