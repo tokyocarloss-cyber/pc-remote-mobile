@@ -742,7 +742,7 @@ class CompanionHandler(servermod.H):
                 if not 128 <= n <= 1500000:
                     raise ValueError('Invalid screen frame size')
                 frame = self.rfile.read(n)
-                if len(frame) != n or not frame.startswith(b'\\xff\\xd8') or not frame.endswith(b'\\xff\\xd9'):
+                if len(frame) != n or not frame.startswith(b'\xff\xd8') or not frame.endswith(b'\xff\xd9'):
                     raise ValueError('Invalid JPEG frame')
                 with PHONE_FRAME_LOCK:
                     PHONE_FRAME_BYTES = frame
