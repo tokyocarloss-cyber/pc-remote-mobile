@@ -1,3 +1,5 @@
+import math, secrets
+from security import DEVICES, SecureServerMixin, tls_context
 import ctypes, io, json, os, re, shutil, socket, subprocess, urllib.parse, hashlib, threading, time, ipaddress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -14,17 +16,19 @@ SCREEN_WIDTH=1280
 SCREEN_HEIGHT=720
 SCREEN_QUALITY=60
 SCREEN_TARGET_FPS=60
-u=ctypes.windll.user32
-k32=ctypes.windll.kernel32
+u=ctypes.windll.user32 if os.name == 'nt' else None
+k32=ctypes.windll.kernel32 if os.name == 'nt' else None
 # Correct pointer-sized Win32 signatures. Without these, 64-bit handles can be truncated.
-k32.GlobalAlloc.restype=ctypes.c_void_p
-k32.GlobalAlloc.argtypes=[ctypes.c_uint,ctypes.c_size_t]
-k32.GlobalLock.restype=ctypes.c_void_p
-k32.GlobalLock.argtypes=[ctypes.c_void_p]
-k32.GlobalUnlock.argtypes=[ctypes.c_void_p]
-k32.GlobalFree.argtypes=[ctypes.c_void_p]
-u.SetClipboardData.restype=ctypes.c_void_p
-u.SetClipboardData.argtypes=[ctypes.c_uint,ctypes.c_void_p]
+if os.name == "nt":
+ k32.GlobalAlloc.restype=ctypes.c_void_p
+ k32.GlobalAlloc.argtypes=[ctypes.c_uint,ctypes.c_size_t]
+ k32.GlobalLock.restype=ctypes.c_void_p
+ k32.GlobalLock.argtypes=[ctypes.c_void_p]
+ k32.GlobalUnlock.argtypes=[ctypes.c_void_p]
+ k32.GlobalFree.argtypes=[ctypes.c_void_p]
+ u.SetClipboardData.restype=ctypes.c_void_p
+ u.SetClipboardData.argtypes=[ctypes.c_uint,ctypes.c_void_p]
+LAST_SCREEN=0.0
 LAST_SEEN=0.0
 LAST_CLIENT=''
 try:
@@ -36,7 +40,7 @@ PAD_BUTTONS={}
 if GAMEPAD:
  PAD_BUTTONS={'A':vg.XUSB_BUTTON.XUSB_GAMEPAD_A,'B':vg.XUSB_BUTTON.XUSB_GAMEPAD_B,'X':vg.XUSB_BUTTON.XUSB_GAMEPAD_X,'Y':vg.XUSB_BUTTON.XUSB_GAMEPAD_Y,'LB':vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER,'RB':vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER,'UP':vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP,'DOWN':vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN,'LEFT':vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT,'RIGHT':vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT,'START':vg.XUSB_BUTTON.XUSB_GAMEPAD_START,'SELECT':vg.XUSB_BUTTON.XUSB_GAMEPAD_BACK,'L3':vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB,'R3':vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB}
 
-KEYS={'A':0x41,'B':0x42,'X':0x58,'Y':0x59,'ENTER':0x0D,'ESC':0x1B,'SPACE':0x20,'UP':0x26,'DOWN':0x28,'LEFT':0x25,'RIGHT':0x27,'VOLUME_UP':0xAF,'VOLUME_DOWN':0xAE,'VOLUME_MUTE':0xAD,'MEDIA_PLAY':0xB3,'MEDIA_NEXT':0xB0,'MEDIA_PREV':0xB1,'LB':0x51,'RB':0x45,'LT':0x31,'RT':0x33,'L3':0x10,'R3':0x11,'START':0x0D,'SELECT':0x1B}
+KEYS={'TAB':0x09,'BACKSPACE':0x08,'DELETE':0x2E,'HOME':0x24,'END':0x23,'A':0x41,'B':0x42,'X':0x58,'Y':0x59,'ENTER':0x0D,'ESC':0x1B,'SPACE':0x20,'UP':0x26,'DOWN':0x28,'LEFT':0x25,'RIGHT':0x27,'VOLUME_UP':0xAF,'VOLUME_DOWN':0xAE,'VOLUME_MUTE':0xAD,'MEDIA_PLAY':0xB3,'MEDIA_NEXT':0xB0,'MEDIA_PREV':0xB1,'LB':0x51,'RB':0x45,'LT':0x31,'RT':0x33,'L3':0x10,'R3':0x11,'START':0x0D,'SELECT':0x1B}
 APP_INDEX={}
 
 def mark_seen(client=''):
@@ -46,17 +50,44 @@ def mark_seen(client=''):
 
 def phone_connected():return time.monotonic()-LAST_SEEN<12
 
+INPUT_LOCK=threading.RLock()
+LAST_INPUT=0.0
+
+def reset_input():
+ if GAMEPAD:
+  with INPUT_LOCK:GAMEPAD.reset();GAMEPAD.update()
+
+def input_watchdog():
+ while True:
+  time.sleep(.25)
+  if time.monotonic()-LAST_INPUT>2:reset_input()
+
 def gamepad_event(raw):
+ global LAST_INPUT
+ with INPUT_LOCK:
+  result=_gamepad_event(raw)
+  LAST_INPUT=time.monotonic()
+  return result
+
+def _gamepad_event(raw):
  if not GAMEPAD:return False
  d=json.loads(raw.decode());kind=d.get('kind')
+ if kind=='reset':GAMEPAD.reset();GAMEPAD.update();return True
+ if kind=='heartbeat':return True
+ if kind not in ('button','stick','trigger'):raise ValueError('Invalid gamepad event')
+ for field in ('x','y','value'):
+  if field in d and (isinstance(d[field],bool) or not math.isfinite(float(d[field]))):raise ValueError('Invalid axis')
  if kind=='button':
   b=PAD_BUTTONS.get(d.get('button'))
+  if b is None or not isinstance(d.get('down'),bool):raise ValueError('Invalid button')
   if b:(GAMEPAD.press_button if d.get('down') else GAMEPAD.release_button)(button=b)
  elif kind=='stick':
+  if d.get('stick') not in ('left','right'):raise ValueError('Invalid stick')
   x=max(-1.0,min(1.0,float(d.get('x',0))));y=max(-1.0,min(1.0,float(d.get('y',0))))
   if d.get('stick')=='left':GAMEPAD.left_joystick_float(x_value_float=x,y_value_float=y)
   else:GAMEPAD.right_joystick_float(x_value_float=x,y_value_float=y)
  elif kind=='trigger':
+  if d.get('trigger') not in ('LT','RT'):raise ValueError('Invalid trigger')
   v=max(0.0,min(1.0,float(d.get('value',0))))
   if d.get('trigger')=='LT':GAMEPAD.left_trigger_float(value_float=v)
   else:GAMEPAD.right_trigger_float(value_float=v)
@@ -152,7 +183,7 @@ def apps_catalog():
 def launch(n):
  if n not in APP_INDEX:apps_catalog()
  item=APP_INDEX.get(n)
- if not item:return
+ if not item:raise ValueError('Unknown application')
  if item.get('steam_id'):os.startfile('steam://rungameid/'+item['steam_id']);return
  if item.get('shortcut') and Path(item['shortcut']).exists():os.startfile(item['shortcut']);return
  cmd=item.get('launch_cmd')
@@ -218,8 +249,18 @@ def unique_download(name):
 
 class H(BaseHTTPRequestHandler):
  protocol_version='HTTP/1.1'
+ def setup(self):
+  super().setup();self.connection.settimeout(15)
+ def authorized(self):
+  if not self.allow_local():return False
+  path=urllib.parse.urlparse(self.path).path
+  if path=='/ping' or (path=='/pair' and self.command=='POST'):return True
+  self.auth_token=self.headers.get('Authorization','').removeprefix('Bearer ')
+  if not DEVICES.valid(self.auth_token):
+   self.close_connection=True;self.sendb(b'Pair this device from the PC tray first',code=401);return False
+  mark_seen(self.client_address[0]);return True
  def sendb(self,b=b'OK',typ='text/plain',code=200):
-  self.send_response(code);self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Type',typ);self.send_header('Content-Length',str(len(b)));self.send_header('Connection','keep-alive');self.end_headers();self.wfile.write(b)
+  self.send_response(code);self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Type',typ);self.send_header('Content-Length',str(len(b)));self.send_header('Connection','close' if self.close_connection else 'keep-alive');self.end_headers();self.wfile.write(b)
  def allow_local(self):
   """Reject Internet hosts and browser-origin cross-site requests."""
   try:
@@ -227,9 +268,9 @@ class H(BaseHTTPRequestHandler):
    private=ip.is_private or ip.is_loopback
   except ValueError:private=False
   if not private:
-   self.sendb(b'Local network only',code=403);return False
+   self.close_connection=True;self.sendb(b'Local network only',code=403);return False
   if self.headers.get('Origin'):
-   self.sendb(b'Browser origin denied',code=403);return False
+   self.close_connection=True;self.sendb(b'Browser origin denied',code=403);return False
   return True
  def sendfile(self,filepath):
   if not filepath.is_file():return self.sendb(b'',code=404)
@@ -242,19 +283,22 @@ class H(BaseHTTPRequestHandler):
    shutil.copyfileobj(stream,self.wfile,64*1024)
  def body(self):
   n=int(self.headers.get('Content-Length','0'))
-  if n<0 or n>256*1024*1024:raise ValueError('Tamanho de envio inválido (máximo 256 MB)')
-  return self.rfile.read(n)
+  if n<0 or n>64*1024:raise ValueError('Tamanho de envio inválido (máximo 64 KB)')
+  data=self.rfile.read(n)
+  if len(data)!=n:raise ValueError('Incomplete request')
+  return data
  def do_GET(self):
-  global SCREEN_WIDTH,SCREEN_HEIGHT,SCREEN_QUALITY,SCREEN_TARGET_FPS
-  if not self.allow_local():return
+  global SCREEN_WIDTH,SCREEN_HEIGHT,SCREEN_QUALITY,SCREEN_TARGET_FPS,LAST_SCREEN
+  if not self.authorized():return
   parsed=urllib.parse.urlparse(self.path);p=parsed.path
   if p=='/ping':return self.sendb(b'PC Remote')
   if p=='/status':
    mark_seen(self.client_address[0]);return self.sendb(json.dumps({'gamepad':GAMEPAD is not None,'ip':local_ip(),'paired':phone_connected(),'client':LAST_CLIENT,'screen':{'width':SCREEN_WIDTH,'height':SCREEN_HEIGHT,'quality':SCREEN_QUALITY,'fps':SCREEN_TARGET_FPS}}).encode(),'application/json')
   if p=='/screen.jpg':
+   LAST_SCREEN=time.monotonic()
    mark_seen(self.client_address[0]);q=urllib.parse.parse_qs(parsed.query)
    try:
-    SCREEN_WIDTH=max(640,min(2560,int(q.get('w',[SCREEN_WIDTH])[0])));SCREEN_HEIGHT=max(360,min(1440,int(q.get('h',[SCREEN_HEIGHT])[0])));SCREEN_QUALITY=max(35,min(90,int(q.get('q',[SCREEN_QUALITY])[0])));SCREEN_TARGET_FPS=max(15,min(120,int(q.get('fps',[SCREEN_TARGET_FPS])[0])))
+    SCREEN_WIDTH=max(640,min(2560,int(q.get('w',[SCREEN_WIDTH])[0])));SCREEN_HEIGHT=max(360,min(1440,int(q.get('h',[SCREEN_HEIGHT])[0])));SCREEN_QUALITY=max(35,min(90,int(q.get('q',[SCREEN_QUALITY])[0])));SCREEN_TARGET_FPS=max(15,min(60,int(q.get('fps',[SCREEN_TARGET_FPS])[0])))
    except:pass
    b=screenshot();return self.sendb(b,'image/jpeg',200 if b else 503)
   if p=='/apps':
@@ -271,12 +315,16 @@ class H(BaseHTTPRequestHandler):
    if f.exists():return self.sendfile(f)
   return self.sendb(b'',code=404)
  def do_POST(self):
-  if not self.allow_local():return
+  if not self.authorized():return
   try:raw=self.body()
-  except ValueError as e:return self.sendb(str(e).encode(),code=413)
+  except ValueError as e:
+   self.close_connection=True;return self.sendb(str(e).encode(),code=413)
   try:
    p=urllib.parse.urlparse(self.path).path;mark_seen(self.client_address[0])
-   if p=='/pair':return self.sendb(json.dumps({'paired':True,'ip':local_ip(),'client':LAST_CLIENT}).encode(),'application/json')
+   if p=='/pair':
+    d=json.loads(raw);token=DEVICES.pair(d.get('pin'),d.get('name','Android'))
+    if not token:return self.sendb(b'Pairing closed, expired or invalid PIN',code=403)
+    return self.sendb(json.dumps({'token':token}).encode(),'application/json')
    if p=='/power':
     if not power_command(raw.decode(errors='ignore')):return self.sendb(b'Invalid power action',code=400)
    elif p=='/gamepad':
@@ -305,9 +353,17 @@ class H(BaseHTTPRequestHandler):
     if f.exists():f.unlink()
    else:return self.sendb(b'',code=404)
    return self.sendb()
-  except Exception as e:return self.sendb(str(e).encode(),code=500)
+  except (ValueError,UnicodeError,TypeError) as e:return self.sendb(str(e).encode(),code=400)
+  except Exception:return self.sendb(b'Command failed',code=500)
  def log_message(self,*a):pass
 
+class SecureHTTPServer(SecureServerMixin,ThreadingHTTPServer):
+ daemon_threads=True
+ def __init__(self,*args,**kwargs):
+  self.tls=tls_context();super().__init__(*args,**kwargs)
+
 def run_server():
- threading.Thread(target=run_discovery_responder,daemon=True,name='NexusDiscovery').start();ThreadingHTTPServer(('0.0.0.0',PORT),H).serve_forever()
+ threading.Thread(target=run_discovery_responder,daemon=True,name='NexusDiscovery').start()
+ threading.Thread(target=input_watchdog,daemon=True).start()
+ SecureHTTPServer(('0.0.0.0',PORT),H).serve_forever()
 if __name__=='__main__':run_server()
