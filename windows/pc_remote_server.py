@@ -1,4 +1,4 @@
-import ctypes, io, json, os, re, shutil, socket, subprocess, urllib.parse, hashlib, threading, time
+import ctypes, io, json, os, re, shutil, socket, subprocess, urllib.parse, hashlib, threading, time, ipaddress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -219,13 +219,34 @@ def unique_download(name):
 class H(BaseHTTPRequestHandler):
  protocol_version='HTTP/1.1'
  def sendb(self,b=b'OK',typ='text/plain',code=200):
-  self.send_response(code);self.send_header('Access-Control-Allow-Origin','*');self.send_header('Content-Type',typ);self.send_header('Content-Length',str(len(b)));self.send_header('Connection','keep-alive');self.end_headers();self.wfile.write(b)
+  self.send_response(code);self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Type',typ);self.send_header('Content-Length',str(len(b)));self.send_header('Connection','keep-alive');self.end_headers();self.wfile.write(b)
+ def allow_local(self):
+  """Reject Internet hosts and browser-origin cross-site requests."""
+  try:
+   ip=ipaddress.ip_address(self.client_address[0])
+   private=ip.is_private or ip.is_loopback
+  except ValueError:private=False
+  if not private:
+   self.sendb(b'Local network only',code=403);return False
+  if self.headers.get('Origin'):
+   self.sendb(b'Browser origin denied',code=403);return False
+  return True
+ def sendfile(self,filepath):
+  if not filepath.is_file():return self.sendb(b'',code=404)
+  self.send_response(200)
+  self.send_header('Content-Type','application/octet-stream')
+  self.send_header('Content-Length',str(filepath.stat().st_size))
+  self.send_header('Cache-Control','no-store')
+  self.end_headers()
+  with filepath.open('rb') as stream:
+   shutil.copyfileobj(stream,self.wfile,64*1024)
  def body(self):
   n=int(self.headers.get('Content-Length','0'))
-  if n>256*1024*1024:raise ValueError('Arquivo maior que o limite de 256 MB')
+  if n<0 or n>256*1024*1024:raise ValueError('Tamanho de envio inválido (máximo 256 MB)')
   return self.rfile.read(n)
  def do_GET(self):
   global SCREEN_WIDTH,SCREEN_HEIGHT,SCREEN_QUALITY,SCREEN_TARGET_FPS
+  if not self.allow_local():return
   parsed=urllib.parse.urlparse(self.path);p=parsed.path
   if p=='/ping':return self.sendb(b'PC Remote')
   if p=='/status':
@@ -244,12 +265,13 @@ class H(BaseHTTPRequestHandler):
    mark_seen(self.client_address[0]);items=[{'name':x.name,'size':x.stat().st_size} for x in OUTBOX.iterdir() if x.is_file()];return self.sendb(json.dumps(items,ensure_ascii=False).encode(),'application/json')
   if p.startswith('/outbox/'):
    mark_seen(self.client_address[0]);f=OUTBOX/Path(urllib.parse.unquote(p[8:])).name
-   if f.exists():return self.sendb(f.read_bytes(),'application/octet-stream')
+   if f.exists():return self.sendfile(f)
   if p.startswith('/download/'):
    mark_seen(self.client_address[0]);f=ROOT/Path(urllib.parse.unquote(p[10:])).name
-   if f.exists():return self.sendb(f.read_bytes(),'application/octet-stream')
+   if f.exists():return self.sendfile(f)
   return self.sendb(b'',code=404)
  def do_POST(self):
+  if not self.allow_local():return
   try:raw=self.body()
   except ValueError as e:return self.sendb(str(e).encode(),code=413)
   try:
@@ -259,15 +281,20 @@ class H(BaseHTTPRequestHandler):
     if not power_command(raw.decode(errors='ignore')):return self.sendb(b'Invalid power action',code=400)
    elif p=='/gamepad':
     if not gamepad_event(raw):return self.sendb(b'Virtual gamepad unavailable',code=503)
-   elif p=='/key':press(KEYS.get(raw.decode().strip(),0))
+   elif p=='/key':
+    key=raw.decode().strip()
+    if key not in KEYS:return self.sendb(b'Unknown key',code=400)
+    press(KEYS[key])
    elif p=='/text':paste_text(raw.decode())
    elif p=='/clipboard':set_clipboard(raw.decode())
    elif p=='/launch':launch(raw.decode().strip())
    elif p=='/mouse':
-    dx,dy=map(int,raw.decode().split(','));u.mouse_event(1,dx,dy,0,0)
+    dx,dy=map(int,raw.decode().split(','));u.mouse_event(1,max(-600,min(600,dx)),max(-600,min(600,dy)),0,0)
    elif p=='/click':
-    f=(2,4) if raw.decode().strip()=='left' else (8,16);u.mouse_event(f[0],0,0,0,0);u.mouse_event(f[1],0,0,0,0)
-   elif p=='/scroll':u.mouse_event(0x0800,0,0,int(raw.decode()),0)
+    btn=raw.decode().strip()
+    if btn not in ('left','right'):return self.sendb(b'Unknown mouse button',code=400)
+    f=(2,4) if btn=='left' else (8,16);u.mouse_event(f[0],0,0,0,0);u.mouse_event(f[1],0,0,0,0)
+   elif p=='/scroll':u.mouse_event(0x0800,0,0,max(-1200,min(1200,int(raw.decode()))),0)
    elif p.startswith('/upload/'):
     target=unique_download(urllib.parse.unquote(p[8:]));target.write_bytes(raw)
     if UPLOAD_CALLBACK:
