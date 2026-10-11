@@ -7,99 +7,101 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
+/**
+ * Streams text edits in order instead of waiting for a SEND action.
+ * Ordinary typing, IME commits, deletions and paste are supported.
+ * Edits in the middle of this staging field are not a replacement for
+ * full remote cursor/selection synchronisation.
+ */
 @Composable
 fun TextRemote() {
-    var value by remember { mutableStateOf("") }
-    var sent by remember { mutableStateOf(false) }
+    var buffer by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf("Digite no campo para escrever diretamente no Windows") }
+    val queue = remember { Channel<String>(Channel.UNLIMITED) }
     val scope = rememberCoroutineScope()
 
+    LaunchedEffect(Api.host) {
+        for (payload in queue) {
+            val ok = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                RemoteClient.post("/type-live", payload.toByteArray(Charsets.UTF_8))
+            }
+            if (!ok) status = "Não foi possível digitar no PC. Verifique a conexão."
+        }
+    }
+    fun submitEdit(newValue: String) {
+        val old = buffer
+        if (newValue == old) return
+        val prefix = old.zip(newValue).takeWhile { (a,b) -> a == b }.size
+        // Android keyboard autocorrect normally replaces the suffix.
+        val removed = old.length - prefix
+        val added = newValue.substring(prefix)
+        if (removed > 0) queue.trySend(JSONObject().put("op","backspace").put("count",removed.coerceAtMost(1024)).toString())
+        if (added.isNotEmpty()) queue.trySend(JSONObject().put("op","insert").put("text",added).toString())
+        buffer = newValue
+        status = "Digitação em tempo real • o foco deve estar no Windows"
+    }
+    fun key(name:String) { scope.launch(Dispatchers.IO) { Api.post("/key",name) } }
+
     Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .imePadding(),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Title("Teclado remoto", "Digite no Windows usando o celular")
-
+        Title("Teclado ao vivo","Escreva diretamente no aplicativo aberto no seu PC")
         Surface(
-            color = NexusUi.Panel,
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, NexusUi.Border),
-            modifier = Modifier.fillMaxWidth()
+            color=NexusUi.Panel,
+            shape=RoundedCornerShape(20.dp),
+            border=BorderStroke(1.dp,NexusUi.Border),
+            modifier=Modifier.fillMaxWidth()
         ) {
-            Column(Modifier.padding(13.dp)) {
-                Text("DIGITAÇÃO RÁPIDA", color = NexusUi.Accent, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = { value = it; sent = false },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Escreva aqui") },
-                    minLines = 4,
-                    maxLines = 8,
-                    shape = RoundedCornerShape(17.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NexusUi.Accent.copy(alpha = .7f),
-                        unfocusedBorderColor = NexusUi.Border,
-                        focusedContainerColor = NexusUi.BackgroundSoft,
-                        unfocusedContainerColor = NexusUi.BackgroundSoft
-                    )
-                )
+            Column(Modifier.padding(14.dp)) {
+                Text("MODO DIRETO",color=NexusUi.Accent,fontWeight=FontWeight.Black)
+                Spacer(Modifier.height(6.dp))
+                Text("Clique no campo de texto desejado no Windows, depois digite aqui. Não é necessário enviar.",
+                    color=NexusUi.Muted,style=MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = {
-                        scope.launch(Dispatchers.IO) {
-                            sent = Api.post("/text", value)
-                        }
-                    },
-                    enabled = value.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(15.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = NexusUi.AccentStrong)
-                ) {
-                    Icon(Icons.Default.Send, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(7.dp))
-                    Text(if (sent) "ENVIADO" else "ENVIAR PARA O PC", fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value=buffer, onValueChange=::submitEdit,
+                    modifier=Modifier.fillMaxWidth(),
+                    placeholder={Text("Comece a digitar…")},
+                    minLines=3,maxLines=6,
+                    shape=RoundedCornerShape(16.dp)
+                )
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){
+                    TextButton(onClick={buffer="";status="Campo local limpo. O texto no PC não foi apagado."}){
+                        Text("LIMPAR CAMPO",color=NexusUi.Accent)
+                    }
                 }
             }
         }
-
-        Text("TECLAS RÁPIDAS", color = NexusUi.Muted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            listOf("ENTER", "ESC", "SPACE").forEach { key ->
-                OutlinedButton(
-                    onClick = { scope.launch(Dispatchers.IO) { Api.post("/key", key) } },
-                    modifier = Modifier.weight(1f).height(44.dp),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text(key, fontWeight = FontWeight.Bold)
+        Text("ATALHOS",color=NexusUi.Muted,style=MaterialTheme.typography.labelMedium)
+        listOf(
+            listOf("ENTER","BACKSPACE","TAB"),
+            listOf("ESC","SPACE","DELETE"),
+            listOf("LEFT","DOWN","UP","RIGHT")
+        ).forEach { line ->
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp), modifier=Modifier.fillMaxWidth()) {
+                line.forEach { label ->
+                    OutlinedButton(
+                        onClick={key(label)},
+                        modifier=Modifier.weight(1f).height(44.dp),
+                        contentPadding=PaddingValues(horizontal=2.dp),
+                        shape=RoundedCornerShape(12.dp)
+                    ) {Text(label,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.SemiBold)}
                 }
             }
         }
-
-        Surface(
-            color = NexusUi.PanelRaised,
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, NexusUi.Border),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(Modifier.padding(12.dp)) {
-                Icon(Icons.Default.Keyboard, null, tint = NexusUi.Accent, modifier = Modifier.size(19.dp))
-                Spacer(Modifier.width(9.dp))
-                Text("Acentos e caracteres especiais são enviados pelo clipboard do Windows.", color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-
-        Spacer(Modifier.height(4.dp))
+        Text(status,color=NexusUi.Muted,style=MaterialTheme.typography.bodySmall)
+        Text("Caracteres Unicode são enviados sem sobrescrever a área de transferência. Requer o companion Windows atualizado.",
+            color=NexusUi.Muted,style=MaterialTheme.typography.labelSmall)
     }
 }
