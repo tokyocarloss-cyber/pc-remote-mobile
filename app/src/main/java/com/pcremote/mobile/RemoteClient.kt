@@ -40,12 +40,26 @@ object RemoteClient {
     fun post(path: String, data: ByteArray): Boolean {
         if (Api.host.isBlank()) return false
         var c: HttpURLConnection? = null
+        var reusable = false
         return try {
-            c = SecureConnection.open(path); c.requestMethod = "POST"; c.readTimeout = 5000; c.doOutput = true
+            c = SecureConnection.open(path); c.requestMethod = "POST"; c.readTimeout = 1500; c.doOutput = true
             c.setRequestProperty("Content-Type","application/octet-stream"); c.setFixedLengthStreamingMode(data.size)
-            c.outputStream.use { it.write(data) }; result(c)
+            c.outputStream.use { it.write(data) }
+            val ok = result(c)
+            // Consume the small acknowledgement so Android can pool this TLS socket.
+            // disconnect() after every movement otherwise defeats keep-alive.
+            val response = if(ok) c.inputStream else c.errorStream
+            response?.use { input ->
+                val buffer=ByteArray(1024);var total=0
+                while(true) {
+                    val n=input.read(buffer);if(n<0) break
+                    total+=n;if(total>65536) throw java.io.IOException("Command reply too large")
+                }
+            }
+            reusable = response != null
+            ok
         } catch (_: Exception) { lastError = "Falha na conexão com o PC"; false }
-        finally { c?.disconnect() }
+        finally { if(!reusable) c?.disconnect() }
     }
     fun download(path: String, output: OutputStream, cancelled: AtomicBoolean = AtomicBoolean(false), progress: (Long,Long)->Unit = {_,_->}): Boolean {
         var c: HttpURLConnection? = null

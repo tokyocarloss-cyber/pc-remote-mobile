@@ -249,6 +249,8 @@ def unique_download(name):
 
 class H(BaseHTTPRequestHandler):
  protocol_version='HTTP/1.1'
+ # Small TLS command responses must not wait for TCP delayed acknowledgements.
+ disable_nagle_algorithm=True
  def setup(self):
   super().setup();self.connection.settimeout(15)
  def authorized(self):

@@ -9,6 +9,14 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 import pc_remote_server as nexus
 import security
+from unittest.mock import MagicMock
+nexus.u=MagicMock()  # Protocol test only, never native input.
+class Handler(nexus.H):
+    def do_POST(self):
+        if self.path=="/mouse":
+            with open("fixture-mouse.jsonl","a") as log:
+                log.write(json.dumps({"port":self.client_address[1],"time":time.monotonic()})+"\n")
+        super().do_POST()
 nexus.DEVICES=security.Devices()
 nexus.DEVICES.open_pairing();nexus.DEVICES.pin='123456';nexus.DEVICES.expires=time.monotonic()+600
 key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
@@ -21,6 +29,6 @@ with tempfile.TemporaryDirectory() as tmp:
     key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()))
     ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);ctx.load_cert_chain(cert_path,key_path)
     class Server(security.SecureServerMixin,ThreadingHTTPServer):pass
-    http=Server(('0.0.0.0',8765),nexus.H);http.tls=ctx
+    http=Server(('0.0.0.0',8765),Handler);http.tls=ctx
     Path('fixture-ready').write_text('ready')
     http.serve_forever()

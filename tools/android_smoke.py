@@ -1,6 +1,6 @@
 """Launch, theme and navigation smoke checks on an actual Android emulator."""
 from pathlib import Path
-import atexit, re, subprocess, time, xml.etree.ElementTree as ET
+import atexit, json, re, subprocess, time, xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 OUT=Path('android-smoke');OUT.mkdir(exist_ok=True)
 PACKAGE='com.pcremote.mobile'
@@ -77,8 +77,17 @@ try:
     shell('am','force-stop',PACKAGE);launch();time.sleep(2)
     assert 'Conectado' in ET.tostring(nodes(),encoding='unicode'),'Persisted Keystore reconnect failed'
     screenshot('reconnected-tls')
+    tap('Mouse')
+    shell('input','swipe','220','800','820','800','1500');time.sleep(.5)
+    shell('input','swipe','820','800','220','800','1500');time.sleep(.5)
+    events=[json.loads(line) for line in Path('fixture-mouse.jsonl').read_text().splitlines()]
+    ports={event['port'] for event in events}
+    (OUT/'mouse-transport.json').write_text(json.dumps({'commands':len(events),'connections':len(ports),'events':events}))
+    assert len(events)>=10,'Touchpad did not deliver movement'
+    assert len(ports)<=3,'Touchpad is opening a new TLS socket for movements'
+    screenshot('touchpad-connected')
 finally:
     fixture.terminate();fixture.wait(timeout=10)
 crashes=shell('logcat','-d','-b','crash');(OUT/'crash-log.txt').write_text(crashes)
 assert 'FATAL EXCEPTION' not in crashes,crashes
-(OUT/'result.txt').write_text('PASS: 10 themes, 10 destinations, rotation, wrong PIN rejected, TLS pairing and persisted reconnect, no Java crash. No physical-PC input assertion.\n')
+(OUT/'result.txt').write_text('PASS: 10 themes, 10 destinations, rotation, wrong PIN rejected, TLS pairing and persisted reconnect, no Java crash; touchpad commands reuse TLS connections. No physical-PC input assertion.\n')

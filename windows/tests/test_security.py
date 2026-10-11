@@ -38,6 +38,21 @@ class ApiTests(unittest.TestCase):
             with self.subTest(path=path):self.assertEqual(self.call(path,auth=False)[0],401)
         for path in ['/upload/a','/power','/key','/mouse-abs','/hotkey','/zoom','/record-toggle','/gamepad','/clipboard','/outbox-ack/a']:
             with self.subTest(path=path):self.assertEqual(self.call(path,b'',auth=False)[0],401)
+    def test_mouse_keepalive_and_low_latency_socket(self):
+        import http.client
+        self.assertTrue(companion.CompanionHandler.disable_nagle_algorithm)
+        connection=http.client.HTTPConnection('127.0.0.1',self.http.server_port,timeout=2)
+        try:
+            with patch.object(nexus,'u',MagicMock()) as native:
+                first=None
+                for _ in range(20):
+                    connection.request('POST','/mouse',b'1,2',{'Authorization':'Bearer '+self.token})
+                    response=connection.getresponse()
+                    self.assertEqual(response.status,200);self.assertEqual(response.read(),b'OK')
+                    if first is None:first=connection.sock
+                    self.assertIs(connection.sock,first)
+                self.assertEqual(native.mouse_event.call_count,20)
+        finally:connection.close()
     def test_cross_origin_denied_in_subclass(self):
         for path in ['/ping','/fs/list','/stream.raw']:
             self.assertEqual(self.call(path,headers={'Origin':'https://evil.invalid'})[0],403)

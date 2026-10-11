@@ -24,6 +24,8 @@ object SecureConnection {
     var error by mutableStateOf("")
     private val dismissed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val factories = java.util.concurrent.ConcurrentHashMap<String,SSLSocketFactory>()
+    private val tokens = java.util.concurrent.ConcurrentHashMap<String,String>()
+    private val pinnedHostnameVerifier = HostnameVerifier { _, _ -> true }
     private fun prefs() = context.getSharedPreferences("nexus_secure", Context.MODE_PRIVATE)
     fun init(ctx: Context) { context = ctx.applicationContext }
     private fun key(): SecretKey {
@@ -34,14 +36,20 @@ object SecureConnection {
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
     }
-    private fun token(host: String): String = runCatching {
-        val bytes = Base64.decode(prefs().getString("token:$host", ""), Base64.NO_WRAP)
+    private fun token(host: String): String {
+        tokens[host]?.let { return it }
+        val encoded = prefs().getString("token:$host", "").orEmpty()
+        if(encoded.isBlank()) return ""
+        return runCatching {
+        val bytes = Base64.decode(encoded, Base64.NO_WRAP)
         Cipher.getInstance("AES/GCM/NoPadding").run {
             init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0,12)))
             String(doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
         }
-    }.getOrDefault("")
+    }.getOrDefault("").also { if(it.isNotBlank()) tokens[host]=it }
+    }
     private fun save(host: String, fingerprint: String, token: String) {
+        tokens.remove(host)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val encoded = Base64.encodeToString(cipher.iv + cipher.doFinal(token.toByteArray()), Base64.NO_WRAP)
         prefs().edit().putString("pin:$host", fingerprint).putString("token:$host", encoded).putString("last_host", host).apply()
@@ -59,11 +67,12 @@ object SecureConnection {
                 observed?.invoke(actual)
             }
         }
-        val ssl = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }
+        fun newFactory() = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }.socketFactory
+        val factory = if(pin == null) newFactory() else factories.getOrPut(pin) { newFactory() }
         return (URL("https://$host:8765$path").openConnection() as HttpsURLConnection).apply {
-            sslSocketFactory = if(pin == null) ssl.socketFactory else factories.getOrPut(pin) { ssl.socketFactory }
+            sslSocketFactory = factory
             // Identity is the certificate SHA-256 checked above, independent of DHCP hostname.
-            hostnameVerifier = HostnameVerifier { _, _ -> true }
+            hostnameVerifier = pinnedHostnameVerifier
             connectTimeout = 1500; readTimeout = 3000; useCaches = false
             instanceFollowRedirects = false
         }
@@ -88,6 +97,7 @@ object SecureConnection {
         val c = runCatching { open("/status",host) }.getOrNull() ?: return false
         return try {
             if (c.responseCode == 401) {
+                tokens.remove(host)
                 prefs().edit().remove("token:$host").remove("pin:$host").apply()
                 false
             } else c.responseCode == 200
@@ -96,6 +106,7 @@ object SecureConnection {
     fun dismiss() { dismissed += pendingHost; pendingHost = "" }
     fun retryPairing() { dismissed.clear() }
     fun forget(host: String) {
+        tokens.remove(host)
         prefs().edit().remove("pin:$host").remove("token:$host").apply()
         factories.clear();dismissed.remove(host);Api.connected=false
     }

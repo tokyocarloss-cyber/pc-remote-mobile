@@ -39,6 +39,7 @@ fun NotebookTouchpad(openKeyboard: () -> Unit) {
     val commands = remember { Channel<Pair<String,String>>(32) }
     LaunchedEffect(Unit) {
         while(isActive) {
+            val started=android.os.SystemClock.elapsedRealtime()
             if(!Api.connected) { motion.clear(); while(commands.tryReceive().isSuccess) {} }
             else {
                 val (dx,dy)=motion.take()
@@ -48,7 +49,7 @@ fun NotebookTouchpad(openKeyboard: () -> Unit) {
                     command?.let { Api.post(it.first,it.second) }
                 }
             }
-            delay(12)
+            delay((12-(android.os.SystemClock.elapsedRealtime()-started)).coerceAtLeast(1))
         }
     }
     DisposableEffect(Unit) { onDispose { commands.close();motion.clear() } }
