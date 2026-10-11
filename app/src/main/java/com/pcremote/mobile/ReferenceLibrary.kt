@@ -281,7 +281,7 @@ private fun RefAppIcon(app: RefApp, size: Int) {
         Text(app.name.take(1).uppercase(), color = NexusUi.Accent, fontWeight = FontWeight.Black)
         if (Api.host.isNotBlank()) {
             AsyncImage(
-                model = "http://${Api.host}:8765/app-icon/${Uri.encode(app.name)}?v=5",
+                model = secureImage("/app-icon/${Uri.encode(app.name)}?v=5"),
                 contentDescription = app.name,
                 modifier = Modifier.fillMaxSize().padding(3.dp),
                 contentScale = ContentScale.Fit

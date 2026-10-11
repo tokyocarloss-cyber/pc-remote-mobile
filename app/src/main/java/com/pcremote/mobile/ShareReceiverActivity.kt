@@ -41,9 +41,7 @@ class ShareReceiverActivity : Activity() {
 
     private fun sendUri(uri: Uri): Boolean {
         return try {
-            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return false
-            if (bytes.isEmpty()) return false
-            RemoteClient.post("/upload/" + URLEncoder.encode(displayName(uri).takeLast(180), "UTF-8"), bytes)
+            RemoteClient.upload(this, uri, displayName(uri).takeLast(180))
         } catch (_: Exception) { false }
     }
 }

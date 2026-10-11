@@ -17,8 +17,8 @@ android {
         applicationId = "com.pcremote.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.1.0"
+        versionCode = 6
+        versionName = "2.0.0-beta1"
     }
 
     signingConfigs {
@@ -71,3 +71,31 @@ dependencies {
 }
 
 // Responsive UI rebuild validated through CI.
+
+val audioRes = layout.buildDirectory.dir("generated/nexusAudio/res")
+android.sourceSets.getByName("main").res.srcDir(audioRes)
+val generateNexusAudio by tasks.registering {
+    outputs.dir(audioRes)
+    doLast {
+        val raw = audioRes.get().dir("raw").asFile.apply { mkdirs() }
+        val bases = listOf(660.0,392.0,880.0,220.0,740.0,523.0,466.0,784.0,587.0,988.0)
+        val durations = listOf(.045,.03,.08,.12,.13,.16,.12)
+        val multipliers = listOf(1.0,1.25,.75,1.5,.55,1.25,.75)
+        bases.forEachIndexed { theme, base -> durations.forEachIndexed { event, duration ->
+            val rate = 22050; val count = (rate * duration).toInt()
+            val bytes = java.nio.ByteBuffer.allocate(44 + count * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            bytes.put("RIFF".toByteArray()).putInt(36+count*2).put("WAVEfmt ".toByteArray()).putInt(16)
+            bytes.putShort(1.toShort()).putShort(1.toShort()).putInt(rate).putInt(rate*2).putShort(2.toShort()).putShort(16.toShort())
+            bytes.put("data".toByteArray()).putInt(count*2)
+            repeat(count) { i ->
+                val t=i.toDouble()/rate; val phase=t/duration
+                val envelope=kotlin.math.min(1.0,t/.008)*(1-phase)*(1-phase)
+                val f=base*multipliers[event]
+                val tone=kotlin.math.sin(2*kotlin.math.PI*f*t)+.2*kotlin.math.sin(2*kotlin.math.PI*f*1.5*t)
+                bytes.putShort((9500*envelope*tone).toInt().toShort())
+            }
+            raw.resolve("nexus_${theme}_${event}.wav").writeBytes(bytes.array())
+        } }
+    }
+}
+tasks.named("preBuild").configure { dependsOn(generateNexusAudio) }

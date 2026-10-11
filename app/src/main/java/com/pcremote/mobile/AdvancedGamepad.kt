@@ -103,12 +103,19 @@ fun AdvancedGamepad(overlay: Boolean = false, forceEdit: Boolean = false) {
     LaunchedEffect(profile, orientationKey) { loadProfile(profile) }
 
     fun pad(json: String) {
-        if (!edit) scope.launch(Dispatchers.IO) { Api.post("/gamepad", json) }
+        if (!edit) RemoteInput.pad(json)
     }
     fun button(k: String, down: Boolean) = pad("{\"kind\":\"button\",\"button\":\"$k\",\"down\":$down}")
     fun trigger(k: String, v: Float) = pad("{\"kind\":\"trigger\",\"trigger\":\"$k\",\"value\":$v}")
     fun stick(k: String, x: Float, y: Float) = pad("{\"kind\":\"stick\",\"stick\":\"$k\",\"x\":$x,\"y\":${-y}}")
 
+    DisposableEffect(edit, profile, orientationKey) { onDispose { RemoteInput.reset() } }
+    LaunchedEffect(edit) {
+        while (!edit) {
+            RemoteInput.pad("{\"kind\":\"heartbeat\"}")
+            kotlinx.coroutines.delay(500)
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         if (!overlay) Surface(
             color = NexusUi.Panel,
@@ -238,8 +245,9 @@ fun AdvancedGamepad(overlay: Boolean = false, forceEdit: Boolean = false) {
                             .pointerInput(edit, k.command) {
                                 if (!edit) detectTapGestures(onPress = {
                                     if (k.command == "LT" || k.command == "RT") trigger(k.command, 1f) else button(k.command, true)
-                                    tryAwaitRelease()
-                                    if (k.command == "LT" || k.command == "RT") trigger(k.command, 0f) else button(k.command, false)
+                                    try { tryAwaitRelease() } finally {
+                                        if (k.command == "LT" || k.command == "RT") trigger(k.command, 0f) else button(k.command, false)
+                                    }
                                 })
                             },
                         contentAlignment = Alignment.Center

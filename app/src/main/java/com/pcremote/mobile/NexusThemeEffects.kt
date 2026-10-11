@@ -20,7 +20,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-enum class NexusEffect { TAP, TICK, OPEN, SELECT, ERROR }
+enum class NexusEffect { TAP, TICK, OPEN, SELECT, ERROR, CONNECT, DISCONNECT }
 
 val NexusUi.cardRadius: Int
     get() = when (currentTheme) {
@@ -37,78 +37,42 @@ val NexusUi.cardRadius: Int
     }
 
 object NexusEffects {
-    // Reuse one audio generator. Previously each touch spawned a new thread and
-    // created a new audio device, causing occasional latency, skips and crackling.
-    private val lock = Any()
-    private var generator: ToneGenerator? = null
-    private var generatorVolume = -1
-    private var lastTickAt = 0L
-
-    fun play(context: Context, effect: NexusEffect) {
-        val prefs = context.getSharedPreferences("nexus_settings", Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("theme_sounds", true)) return
-        val volume = prefs.getInt("sound_volume", 18).coerceIn(0, 100)
-        if (volume == 0) return
-
-        val tone = when (NexusUi.currentTheme) {
-            "Attack on Titan" -> when (effect) {
-                NexusEffect.SELECT -> ToneGenerator.TONE_PROP_ACK
-                NexusEffect.ERROR -> ToneGenerator.TONE_PROP_NACK
-                else -> ToneGenerator.TONE_DTMF_D
-            }
-            "Frutiger Aero" -> when (effect) {
-                NexusEffect.SELECT -> ToneGenerator.TONE_PROP_ACK
-                else -> ToneGenerator.TONE_DTMF_6
-            }
-            "Dark Souls" -> when (effect) {
-                NexusEffect.SELECT -> ToneGenerator.TONE_DTMF_0
-                NexusEffect.ERROR -> ToneGenerator.TONE_PROP_NACK
-                else -> ToneGenerator.TONE_DTMF_8
-            }
-            "Naruto" -> when (effect) {
-                NexusEffect.SELECT -> ToneGenerator.TONE_DTMF_A
-                else -> ToneGenerator.TONE_DTMF_3
-            }
-            "Retro CRT" -> when (effect) {
-                NexusEffect.SELECT -> ToneGenerator.TONE_DTMF_B
-                else -> ToneGenerator.TONE_DTMF_1
-            }
-            "Cyber Samurai" -> when (effect) {
-                NexusEffect.SELECT -> ToneGenerator.TONE_DTMF_C
-                else -> ToneGenerator.TONE_DTMF_9
-            }
-            else -> when (effect) {
-                NexusEffect.SELECT -> ToneGenerator.TONE_PROP_ACK
-                NexusEffect.ERROR -> ToneGenerator.TONE_PROP_NACK
-                NexusEffect.OPEN -> ToneGenerator.TONE_DTMF_5
-                NexusEffect.TICK -> ToneGenerator.TONE_DTMF_2
-                NexusEffect.TAP -> ToneGenerator.TONE_DTMF_4
-            }
-        }
-        val duration = when (effect) {
-            NexusEffect.TICK, NexusEffect.TAP -> 32
-            NexusEffect.OPEN -> 55
-            NexusEffect.SELECT -> 80
-            NexusEffect.ERROR -> 110
-        }
-        synchronized(lock) {
-            val now = android.os.SystemClock.uptimeMillis()
-            if ((effect == NexusEffect.TICK || effect == NexusEffect.TAP) && now - lastTickAt < 55L) return
-            lastTickAt = now
-            if (generator == null || generatorVolume != volume) {
-                runCatching { generator?.release() }
-                generator = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, volume) }.getOrNull()
-                generatorVolume = volume
-            }
-            runCatching { generator?.startTone(tone, duration) }
+    private var pool: android.media.SoundPool? = null
+    private val loaded = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+    private val sounds = mutableMapOf<Pair<Int,Int>,Int>()
+    private var lastAt = 0L
+    @Volatile var gameControls = false
+    private val themes = listOf("NEXUS Neon","Attack on Titan","Frutiger Aero","Dark Souls","Anime Prism","Naruto","Cyber Samurai","Sakura Night","Retro CRT","Arctic Glass")
+    @Synchronized fun prepare(ctx: Context) {
+        if (pool != null) return
+        val p = android.media.SoundPool.Builder().setMaxStreams(1).setAudioAttributes(
+            android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build()
+        p.setOnLoadCompleteListener { _, id, status -> if (status == 0) loaded.add(id) }
+        pool = p
+        for (theme in 0..9) for (event in 0..6) {
+            val resource = ctx.resources.getIdentifier("nexus_${theme}_${event}","raw",ctx.packageName)
+            if (resource != 0) sounds[theme to event] = p.load(ctx,resource,1)
         }
     }
-
-    fun release() = synchronized(lock) {
-        runCatching { generator?.release() }
-        generator = null
-        generatorVolume = -1
+    @Synchronized fun play(context: Context, effect: NexusEffect, preview: Boolean = false) {
+        val prefs = context.getSharedPreferences("nexus_settings",Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("theme_sounds",true)) return
+        if (!preview && gameControls && prefs.getBoolean("mute_game_sounds",true)) return
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (!preview && prefs.getBoolean("mute_during_media",true) && audio.isMusicActive) return
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now-lastAt < 100L) return
+        lastAt = now
+        prepare(context)
+        val theme = when (prefs.getString("audio_profile","Tema")) {
+            "Suave" -> 2; "Retrô" -> 8; else -> themes.indexOf(NexusUi.currentTheme).coerceAtLeast(0)
+        }
+        val id = sounds[theme to effect.ordinal] ?: return
+        val volume = prefs.getInt("sound_volume",18).coerceIn(0,100)/100f
+        if (loaded.contains(id)) pool?.play(id,volume,volume,1,0,1f)
     }
+    @Synchronized fun release() { pool?.release(); pool=null; sounds.clear(); loaded.clear() }
 }
 
 @Composable

@@ -6,7 +6,7 @@
  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
- <application
+ <application android:name=".NexusApplication" android:allowBackup="false"
   android:theme="@style/Theme.PCRemote"
   android:label="NEXUS PC Remote"
   android:icon="@drawable/nexus_app_icon"

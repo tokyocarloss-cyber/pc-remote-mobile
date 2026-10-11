@@ -93,11 +93,7 @@ class EdgeDropService: Service() {
   val name=displayName(uri).takeLast(180)
   try{
    runCatching{contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)}
-   val bytes=contentResolver.openInputStream(uri)?.use{it.readBytes()}
-    ?:contentResolver.openAssetFileDescriptor(uri,"r")?.use{afd->afd.createInputStream().readBytes()}
-    ?:run{notifyResult(false,name);return}
-   if(bytes.isEmpty()){notifyResult(false,name);return}
-   val ok=RemoteClient.post("/upload/"+URLEncoder.encode(name,"UTF-8"),bytes)
+   val ok=RemoteClient.upload(this,uri,name)
    notifyResult(ok,name)
   }catch(_:Exception){notifyResult(false,name)}
  }

@@ -63,7 +63,7 @@ fun NexusSettings() {
         themeName = name
         prefs.edit().putString("theme", name).apply()
         NexusUi.applyTheme(name)
-        NexusEffects.play(ctx, NexusEffect.SELECT)
+        NexusEffects.play(ctx, NexusEffect.SELECT, preview = true)
     }
 
     Column(
@@ -169,7 +169,7 @@ fun NexusSettings() {
                         Switch(checked = themeSounds, onCheckedChange = {
                             themeSounds = it
                             prefs.edit().putBoolean("theme_sounds", it).apply()
-                            if (it) NexusEffects.play(ctx, NexusEffect.SELECT)
+                            if (it) NexusEffects.play(ctx, NexusEffect.SELECT, preview = true)
                         })
                     }
                 }
@@ -185,7 +185,7 @@ fun NexusSettings() {
                     onValueChange = { soundVolume = it },
                     onValueChangeFinished = {
                         prefs.edit().putInt("sound_volume", soundVolume.toInt()).apply()
-                        NexusEffects.play(ctx, NexusEffect.SELECT)
+                        NexusEffects.play(ctx, NexusEffect.SELECT, preview = true)
                     },
                     valueRange = 0f..60f,
                     enabled = themeSounds
@@ -193,6 +193,38 @@ fun NexusSettings() {
                 Text("Toques e transições usam sons curtos, sem interromper a mídia do celular.",
                     color = NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
 
+                var audioProfile by remember { mutableStateOf(prefs.getString("audio_profile","Tema") ?: "Tema") }
+                Text("Perfil de áudio", color = NexusUi.Text)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("Tema","Suave","Retrô").forEach { profile ->
+                        FilterChip(selected = audioProfile == profile, onClick = {
+                            audioProfile = profile; prefs.edit().putString("audio_profile",profile).apply()
+                            NexusEffects.play(ctx,NexusEffect.SELECT,preview=true)
+                        }, label = { Text(profile) })
+                    }
+                }
+                var muteGames by remember { mutableStateOf(prefs.getBoolean("mute_game_sounds",true)) }
+                var muteMedia by remember { mutableStateOf(prefs.getBoolean("mute_during_media",true)) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Silenciar nos controles de jogos",modifier=Modifier.weight(1f),color=NexusUi.Text)
+                    Switch(checked=muteGames,onCheckedChange={muteGames=it;prefs.edit().putBoolean("mute_game_sounds",it).apply()})
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Silenciar enquanto há mídia tocando",modifier=Modifier.weight(1f),color=NexusUi.Text)
+                    Switch(checked=muteMedia,onCheckedChange={muteMedia=it;prefs.edit().putBoolean("mute_during_media",it).apply()})
+                }
+                OutlinedButton(onClick={NexusEffects.play(ctx,NexusEffect.SELECT,preview=true)}) { Text("PRÉ-ESCUTAR") }
+                val flowPrefs=remember { ctx.getSharedPreferences("nexus_flow",Context.MODE_PRIVATE) }
+                var legacyBridge by remember { mutableStateOf(flowPrefs.getBoolean("legacy_bridge",false)) }
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text("Bridge legado por navegador (HTTP)",modifier=Modifier.weight(1f),color=NexusUi.Text)
+                    Switch(checked=legacyBridge,onCheckedChange={
+                        legacyBridge=it;flowPrefs.edit().putBoolean("legacy_bridge",it).apply()
+                        ctx.stopService(android.content.Intent(ctx,PhoneInboxService::class.java))
+                        ctx.startForegroundService(android.content.Intent(ctx,PhoneInboxService::class.java))
+                    })
+                }
+                Text("Opcional: expõe a pasta selecionada no Flow ao IP do PC, sem criptografia. Use só em rede confiável. Transferências normais usam TLS e não precisam desta opção.",color=NexusUi.Muted,style=MaterialTheme.typography.labelSmall)
                 NexusThemes.forEach { theme ->
                     val selected = themeName == theme.name
                     Surface(

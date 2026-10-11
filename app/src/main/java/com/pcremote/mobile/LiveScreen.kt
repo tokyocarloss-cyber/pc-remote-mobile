@@ -44,7 +44,7 @@ fun LivePcScreen() {
             ) {
                 if (Api.connected) {
                     AsyncImage(
-                        model = "http://${Api.host}:8765/screen.jpg?t=$tick",
+                        model = secureImage("/screen.jpg?t=$tick"),
                         contentDescription = "Tela do PC",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit

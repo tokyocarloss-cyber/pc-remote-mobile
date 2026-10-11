@@ -1,7 +1,7 @@
 name: Build Windows Companion
 on:
   push:
-    branches: [full-redesign, 'nexus-v2-stability-sound-*']
+    branches: [full-redesign, 'nexus-v2-stability-sound-*', 'nexus-2-*']
     paths:
       - "windows/**"
       - ".github/workflows/build-windows.yml"
@@ -25,7 +25,7 @@ jobs:
         timeout-minutes: 5
         run: |
           python -m pip install --disable-pip-version-check --prefer-binary -r requirements.txt
-          python -m pip install --disable-pip-version-check --prefer-binary pyinstaller
+          python -m pip install --disable-pip-version-check --prefer-binary pyinstaller==6.20.0 vgamepad==0.1.0
           python -c "import pystray, PIL, tkinterdnd2, mss; print('Runtime dependencies OK')"
       - name: Validate Python sources
         run: python -m py_compile pc_remote_server.py drop_edge.py companion_v2.py
@@ -41,6 +41,8 @@ jobs:
           --collect-all pystray
           --collect-all PIL
           --collect-all mss
+          --collect-all vgamepad
+          --collect-all cryptography
           --hidden-import pystray._win32
           --hidden-import pystray._base
           companion_v2.py

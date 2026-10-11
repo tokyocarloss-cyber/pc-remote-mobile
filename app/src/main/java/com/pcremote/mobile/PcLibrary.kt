@@ -253,7 +253,7 @@ private fun AppIcon(app: PcApp, size: Int) {
         Text(app.name.take(1).uppercase(), color = NexusUi.Accent, fontWeight = FontWeight.Black)
         if (Api.host.isNotBlank()) {
             AsyncImage(
-                model = "http://${Api.host}:8765/app-icon/${Uri.encode(app.name)}",
+                model = secureImage("/app-icon/${Uri.encode(app.name)}"),
                 contentDescription = app.name,
                 modifier = Modifier.fillMaxSize().padding(6.dp),
                 contentScale = ContentScale.Fit

@@ -39,6 +39,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class NexusV2Activity : ComponentActivity() {
+    override fun onStop() { RemoteInput.reset(); super.onStop() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         runCatching { startForegroundService(Intent(this, PhoneInboxService::class.java)) }
@@ -54,7 +56,7 @@ class NexusV2Activity : ComponentActivity() {
                     background = NexusUi.Background,
                     surface = NexusUi.Panel
                 )
-            ) { NexusV2App() }
+            ) { NexusV2App(); PairingDialog() }
         }
     }
 }
@@ -98,10 +100,11 @@ private fun NexusV2App() {
     LaunchedEffect(Unit) {
         while (true) {
             if (!Api.connected) {
-                val found = Discovery.findPc()
+                val saved = SecureConnection.lastHost()
+                val found = if (saved.isNotBlank() && Discovery.checkHost(saved)) saved else Discovery.findPc()
                 if (found != null) connectToHost(found, Discovery.lastMethod)
             } else {
-                val alive = withContext(Dispatchers.IO) { Discovery.checkHost(Api.host) }
+                val alive = withContext(Dispatchers.IO) { SecureConnection.authenticated(Api.host) }
                 if (!alive) {
                     Api.connected = false
                     Api.connectionMethod = "Reconectando"
@@ -112,10 +115,11 @@ private fun NexusV2App() {
     }
 
     LaunchedEffect(Api.connected) {
-        if (Api.connected) NexusEffects.play(ctx, NexusEffect.SELECT)
+        if (Api.connected) NexusEffects.play(ctx, NexusEffect.CONNECT)
+        else if (Api.host.isNotBlank()) NexusEffects.play(ctx, NexusEffect.DISCONNECT)
     }
 
-    LaunchedEffect(page) { if (page != 2 && page != 4) NexusFullscreen.active = false }
+    LaunchedEffect(page) { NexusEffects.gameControls = page == 2 || page == 4; if (page != 2 && page != 4) NexusFullscreen.active = false }
     LaunchedEffect(NexusFullscreen.active) {
         activity?.window?.decorView?.systemUiVisibility = if (NexusFullscreen.active) {
             View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
@@ -259,12 +263,15 @@ private fun V2Home(go:(Int)->Unit){
             Column(Modifier.padding(14.dp)){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Box(Modifier.size(44.dp).background(NexusUi.PanelRaised,CircleShape),contentAlignment=Alignment.Center){Icon(Icons.Default.VolumeUp,null,tint=NexusUi.Text)}
-                    Spacer(Modifier.width(10.dp));Text("Volume",color=NexusUi.Text,fontSize=16.sp,modifier=Modifier.weight(1f));Text("${volume.toInt()}%",color=NexusUi.Text,fontWeight=FontWeight.Bold)
+                    Spacer(Modifier.width(10.dp));Text("Volume",color=NexusUi.Text,fontSize=16.sp,modifier=Modifier.weight(1f));Text("Windows",color=NexusUi.Muted)
                 }
-                Slider(value=volume,onValueChange={v->val old=volume;volume=v;if(kotlin.math.abs(v-old)>=2f){scope.launch(Dispatchers.IO){Api.post("/key",if(v>old)"VOLUME_UP" else "VOLUME_DOWN")}}},valueRange=0f..100f,colors=SliderDefaults.colors(thumbColor=NexusUi.Text,activeTrackColor=NexusUi.Accent,inactiveTrackColor=NexusUi.Border))
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(modifier=Modifier.weight(1f), onClick={scope.launch(Dispatchers.IO){Api.post("/key","VOLUME_DOWN")}}) { Text("− VOLUME") }
+                    OutlinedButton(modifier=Modifier.weight(1f), onClick={scope.launch(Dispatchers.IO){Api.post("/key","VOLUME_UP")}}) { Text("+ VOLUME") }
+                }
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
                     V2MediaButton(Icons.Default.SkipPrevious,Modifier.weight(1f)){NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_PREV")}}
-                    V2MediaButton(if(playing)Icons.Default.Pause else Icons.Default.PlayArrow,Modifier.weight(1f)){playing=!playing;NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_PLAY")}}
+                    V2MediaButton(Icons.Default.PlayArrow,Modifier.weight(1f)){playing=!playing;NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_PLAY")}}
                     V2MediaButton(Icons.Default.SkipNext,Modifier.weight(1f)){NexusEffects.play(ctx,NexusEffect.TAP);scope.launch(Dispatchers.IO){Api.post("/key","MEDIA_NEXT")}}
                 }
             }
