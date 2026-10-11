@@ -94,7 +94,7 @@ private fun themeMotionMs(): Int = when (NexusUi.currentTheme) {
 private fun NexusV2App() {
     var page by remember { mutableIntStateOf(0) }
     val ctx = LocalContext.current
-    val activity = ctx as? Activity
+    val activity = androidx.activity.compose.LocalActivity.current
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     LaunchedEffect(Unit) {

@@ -64,7 +64,7 @@ private val refNav = listOf(
 private fun NexusReferenceApp() {
     var page by remember { mutableIntStateOf(0) }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val activity = LocalContext.current as? Activity
+    val activity = androidx.activity.compose.LocalActivity.current
 
     LaunchedEffect(Unit) {
         while (true) {

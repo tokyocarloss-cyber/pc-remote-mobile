@@ -27,6 +27,12 @@ jobs:
       - name: Build test APK
         run: gradle testDebugUnitTest lintDebug assembleDebug
 
+      - name: Upload validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-Android-validation
+          path: app/build/reports/
       - name: Upload test APK
         uses: actions/upload-artifact@v4
         with:

@@ -1,9 +1,10 @@
 @echo off
 setlocal
+set VGAMEPAD_SKIP_VIGEMBUS_INSTALL=true
 cd /d "%~dp0"
 py -m pip install --disable-pip-version-check --prefer-binary -r requirements.txt
 if errorlevel 1 exit /b 1
-py -m pip install --disable-pip-version-check --prefer-binary pyinstaller==6.20.0 vgamepad==0.1.0
+py -m pip install --disable-pip-version-check --prefer-binary pyinstaller==6.20.0 git+https://github.com/yannbouteiller/vgamepad.git@c1d728a6813760a5be21ac9379f4b23347fe8345
 if errorlevel 1 exit /b 1
 py -c "import pystray, PIL, tkinterdnd2, mss; print('Runtime dependencies OK')"
 if errorlevel 1 exit /b 1
