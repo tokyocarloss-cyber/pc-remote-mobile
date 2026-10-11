@@ -261,13 +261,23 @@ fun SmoothLiveScreen() {
                     }
                 }
 
-                if (NexusFullscreen.active) {
-                    Box(
-                        Modifier.align(Alignment.TopCenter).padding(top = 3.dp).width(74.dp).height(12.dp)
-                            .background(Color(0x66000000), RoundedCornerShape(99.dp)).clickable { shelfOpen = !shelfOpen },
-                        contentAlignment = Alignment.Center
+                // Persistent, discoverable handle, away from the central screen controls.
+                if (frame != null || NexusFullscreen.active) {
+                    Surface(
+                        color = NexusUi.Panel.copy(alpha = .94f),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, NexusUi.Accent.copy(alpha = .70f)),
+                        shadowElevation = 8.dp,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top=7.dp,end=9.dp)
+                            .size(width=60.dp,height=50.dp)
+                            .pointerInput(Unit) {
+                                detectTapGestures(onDoubleTap={shelfOpen = !shelfOpen})
+                            }
                     ) {
-                        Box(Modifier.width(38.dp).height(3.dp).background(NexusUi.Accent, RoundedCornerShape(99.dp)))
+                        Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
+                            Icon(Icons.Default.Tune,"Toque duas vezes para atalhos",tint=NexusUi.Accent,modifier=Modifier.size(22.dp))
+                            Text("2 TOQUES",color=NexusUi.Text,style=MaterialTheme.typography.labelSmall)
+                        }
                     }
 
                     if (shelfOpen) {
@@ -276,7 +286,7 @@ fun SmoothLiveScreen() {
                             shape = RoundedCornerShape(18.dp),
                             border = BorderStroke(1.dp, NexusUi.Border),
                             shadowElevation = 16.dp,
-                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp)
+                            modifier = Modifier.align(Alignment.TopEnd).padding(top = 62.dp, end = 8.dp).widthIn(max = 430.dp)
                         ) {
                             Row(Modifier.padding(6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
                                 EdgeShortcut("ALT F4", Icons.Default.Close) { hotkey("ALT_F4") }
