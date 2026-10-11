@@ -64,7 +64,7 @@ private val launcherNames = setOf("steam", "epic games launcher", "epic games", 
 private fun autoGame(app: RefApp): Boolean = app.store in gameStores && app.name.trim().lowercase() !in launcherNames
 
 @Composable
-fun ReferenceLibrary() {
+fun ReferenceLibrary(openWheelOnStart: Boolean = false) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val favPrefs = remember { ctx.getSharedPreferences("nexus_favorites", Context.MODE_PRIVATE) }
@@ -75,7 +75,7 @@ fun ReferenceLibrary() {
     var favorites by remember { mutableStateOf(favPrefs.getStringSet("apps", emptySet())?.toSet().orEmpty()) }
     var games by remember { mutableStateOf(customPrefs.getStringSet("games", emptySet())?.toSet().orEmpty()) }
     var radial by remember { mutableStateOf(customPrefs.getStringSet("radial", emptySet())?.toSet().orEmpty()) }
-    var wheel by remember { mutableStateOf(false) }
+    var wheel by remember(openWheelOnStart) { mutableStateOf(openWheelOnStart) }
     var manager by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(false) }
@@ -423,7 +423,7 @@ private fun RadialLauncherDialog(
                 BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     val diameter = if (maxWidth < maxHeight) maxWidth else maxHeight
                     val ringSize = diameter * .94f
-                    val radius = diameter * .36f
+                    val radius = diameter * .32f
                     val itemSize = 68.dp
                     val centerRadiusFraction = .22f
 
@@ -509,8 +509,8 @@ private fun RadialLauncherDialog(
 
                         slots.forEachIndexed { index, app ->
                             val angle = -PI / 2.0 + 2.0 * PI * index / slots.size
-                            val x = ringSize / 2 + radius * cos(angle).toFloat() - itemSize / 2
-                            val y = ringSize / 2 + radius * sin(angle).toFloat() - itemSize / 2
+                            val x = radius * cos(angle).toFloat()
+                            val y = radius * sin(angle).toFloat()
                             val itemScale by animateFloatAsState(if (selected == index) 1.18f else 1f, tween(120), label = "radialItem$index")
                             Column(Modifier.offset(x, y).width(itemSize).scale(itemScale), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Surface(
