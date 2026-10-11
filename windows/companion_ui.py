@@ -2,6 +2,8 @@
 import tkinter as tk
 from tkinter import ttk
 import time
+import io
+from PIL import Image, ImageTk
 from security import DEVICES, fingerprint
 
 class Dashboard:
@@ -26,6 +28,9 @@ class Dashboard:
         ttk.Button(row,text='Parear celular',style='Nexus.TButton',command=self.pair).pack(side='left',padx=(0,8))
         ttk.Button(row,text='Downloads',style='Nexus.TButton',command=api.open_downloads).pack(side='left',padx=(0,8))
         ttk.Button(row,text='Firewall',style='Nexus.TButton',command=api.repair_firewall).pack(side='left')
+        ttk.Button(box,text='VER TELA DO CELULAR',style='Nexus.TButton',command=self.show_phone).pack(fill='x',pady=8)
+        self.phone_window=None
+        self.phone_photo=None
         self.pair_info=ttk.Label(box,text='Pareamento fechado. Abra somente quando for conectar seu celular.',style='Nexus.TLabel',wraplength=640)
         self.pair_info.pack(fill='x',pady=12)
         ttk.Label(box,text='Dispositivos autorizados',style='Nexus.TLabel').pack(anchor='w',pady=(10,6))
@@ -38,6 +43,38 @@ class Dashboard:
         ttk.Button(box,text='Minimizar para bandeja',style='Nexus.TButton',command=self.window.withdraw).pack(anchor='e',pady=10)
         self.update()
     def show(self):self.window.deiconify();self.window.lift()
+    def show_phone(self):
+        if self.phone_window is None or not self.phone_window.winfo_exists():
+            self.phone_window=tk.Toplevel(self.window)
+            self.phone_window.title('NEXUS • Tela do celular')
+            self.phone_window.geometry('490x820')
+            self.phone_window.configure(bg='#070e16')
+            self.phone_label=tk.Label(self.phone_window,text='Inicie a transmissão na aba Tela celular do Android',
+                                      bg='#070e16',fg='#cbdfee',font=('Segoe UI',11))
+            self.phone_label.pack(fill='both',expand=True)
+            self.phone_image_at=0
+            self.poll_phone()
+        else:
+            self.phone_window.deiconify();self.phone_window.lift()
+
+    def poll_phone(self):
+        if self.phone_window is None or not self.phone_window.winfo_exists():
+            return
+        data, timestamp = self.api.phone_frame_snapshot()
+        if timestamp and timestamp != self.phone_image_at and time.monotonic()-timestamp < 4:
+            try:
+                frame=Image.open(io.BytesIO(data))
+                frame.thumbnail((920,1380),Image.Resampling.BILINEAR)
+                self.phone_photo=ImageTk.PhotoImage(frame,master=self.phone_window)
+                self.phone_label.configure(image=self.phone_photo,text='')
+                self.phone_image_at=timestamp
+            except Exception:
+                pass
+        elif time.monotonic()-timestamp > 4:
+            self.phone_label.configure(image='',text='Aguardando transmissão autorizada no celular…')
+            self.phone_photo=None
+        self.phone_window.after(150,self.poll_phone)
+
     def pair(self):
         if not self.api.server:
             self.pair_info.configure(text='Servidor indisponível: '+self.api.server_error);return

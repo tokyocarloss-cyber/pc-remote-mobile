@@ -1,4 +1,4 @@
-# NEXUS PC Remote — 2.0 beta 1
+# NEXUS PC Remote — 2.0 beta 1 (desenvolvimento incremental)
 
 Continuação da **full-redesign / 1.1.0**, sem substituir as telas avançadas pela tentativa simplificada da 2.0. Android Kotlin/Compose + companion Windows Python/PyInstaller.
 
@@ -45,3 +45,17 @@ Veja [AUDIT-2.0.md](docs/AUDIT-2.0.md) e [TESTE-NO-APARELHO.md](docs/TESTE-NO-AP
 Build Android: JDK 17, Android SDK 35 e Gradle 8.9; execute `gradle testDebugUnitTest lintDebug assembleDebug`. Os efeitos WAV são gerados automaticamente.
 
 Build Windows: Python 3.12 e `windows/build_companion.bat`. O workflow também executa o EXE empacotado em modo de diagnóstico. Para testes de API: `cd windows` e `python -m unittest discover -s tests -v`. Em Linux, o teste de DPAPI é explicitamente ignorado; os testes não simulam sucesso de entrada nativa.
+
+## Experimentos de interface — PR #5 (somente branch de trabalho)
+
+Estas funções **exigem o Android e o companion Windows desta mesma branch**. Não estão incluídas na beta anterior nem são consideradas concluídas até os testes no celular/PC.
+
+- **Teclado ao vivo:** abra um campo no Windows (posicione o cursor), então digite em NEXUS > Teclado. Inserções, caracteres Unicode e apagamentos são transmitidos sem um botão Enviar. O campo local é um histórico de edição, não sincroniza a posição do cursor/seleção do Windows; use Limpar campo para começar outro trecho. Atualizações IME complexas e múltiplas telas precisam de teste físico.
+- **Arquivos:** use NEXUS > Arquivos > Celular. Para mostrar as pastas de memória interna compartilhada diretamente no NEXUS, conceda manualmente a permissão especial de gerenciar arquivos nas Configurações do Android. É uma permissão ampla, opcional e revogável; não elimina restrições do Android para dados privados. Se não conceder, use o seletor do sistema para enviar arquivos pontuais. A aba PC permite navegar e baixar dos diretórios compartilhados do Windows; Enviar usa o fluxo de transferências antigo.
+- **Espelhamento Android para PC:** em NEXUS > Mais > Tela celular, toque Iniciar, aceite o diálogo de gravação de tela do Android e abra NEXUS no Windows > Ver tela do celular. A transmissão passa pela conexão TLS pareada existente; só inicie em redes confiáveis. Para parar, use o botão no NEXUS Android ou PARAR na notificação do serviço. A captura pode mostrar dados sensíveis, portanto evite compartilhá-los. Proteções do Android podem bloquear imagens de apps restritos.
+- **Limites do espelhamento:** protótipo JPEG na rede local a cerca de 6 quadros/s, sem áudio e sem controle reverso do Android. Não equiparar a scrcpy nem a streaming de jogos. Girar o aparelho durante a sessão pode exigir interromper e iniciar a projeção novamente.
+- **Atalhos de transmissão:** na tela do PC transmitida ao Android, toque duas vezes no botão 2 TOQUES no canto superior direito para mostrar/ocultar atalhos.
+- **Navegação:** barra inferior reduzida a Início, Roda, Arquivos, Teclado e Mais. Mouse, Controle, Apps, Tela PC, Tela celular, Mídia e Configurações ficam em Mais ou nos atalhos da tela inicial.
+
+**Antes da distribuição:** validar compilação Android/Windows, permissões MediaProjection no Android 14+, configuração multi-toque, pausa/encerramento do espelhamento, transferência de arquivos grandes, e limite real de latência no aparelho. O pedido de `MANAGE_EXTERNAL_STORAGE` deve passar por revisão da política da loja na distribuição; para builds fora da loja, a autorização continua manual.
+

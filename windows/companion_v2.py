@@ -33,6 +33,14 @@ edge = None
 tray_icon = None
 server_error = ''
 dashboard = None
+PHONE_FRAME_LOCK = threading.Lock()
+PHONE_FRAME_BYTES = b''
+PHONE_FRAME_AT = 0.0
+
+def phone_frame_snapshot():
+    with PHONE_FRAME_LOCK:
+        return PHONE_FRAME_BYTES, PHONE_FRAME_AT
+
 AUTOSTART_VALUE = 'NEXUS PC Remote'
 PREFS_KEY = r'Software\NEXUS PC Remote'
 
@@ -545,6 +553,61 @@ def zoom_wheel(raw):
     return True
 
 
+
+def live_keyboard_edit(raw):
+    """Press virtual Backspace or inject Unicode text via Win32 SendInput.
+    Do not change the user's clipboard (unlike bulk paste).
+    """
+    import json
+    try:
+        if len(raw) > 8192:
+            return False
+        request = json.loads(raw.decode('utf-8'))
+        op = request.get('op')
+        if op == 'backspace':
+            count = request.get('count')
+            if type(count) is not int or not 0 <= count <= 1024:
+                return False
+            for _ in range(count):
+                servermod.press(0x08)
+            return True
+        if op != 'insert':
+            return False
+        value = request.get('text')
+        if not isinstance(value, str) or len(value) > 2048:
+            return False
+        import ctypes
+        from ctypes import wintypes
+        ULONG_PTR = ctypes.c_size_t
+        class KEYBDINPUT(ctypes.Structure):
+            _fields_ = [('wVk', wintypes.WORD), ('wScan', wintypes.WORD),
+                        ('dwFlags', wintypes.DWORD), ('time', wintypes.DWORD),
+                        ('dwExtraInfo', ULONG_PTR)]
+        class MOUSEINPUT(ctypes.Structure):
+            _fields_ = [('dx', wintypes.LONG), ('dy', wintypes.LONG),
+                        ('mouseData', wintypes.DWORD), ('dwFlags', wintypes.DWORD),
+                        ('time', wintypes.DWORD), ('dwExtraInfo', ULONG_PTR)]
+        class HARDWAREINPUT(ctypes.Structure):
+            _fields_ = [('uMsg', wintypes.DWORD), ('wParamL', wintypes.WORD),
+                        ('wParamH', wintypes.WORD)]
+        class INPUTUNION(ctypes.Union):
+            _fields_ = [('ki', KEYBDINPUT), ('mi', MOUSEINPUT), ('hi', HARDWAREINPUT)]
+        class INPUT(ctypes.Structure):
+            _fields_ = [('type', wintypes.DWORD), ('data', INPUTUNION)]
+        units = value.encode('utf-16-le')
+        if not units: return True
+        events = []
+        for index in range(0, len(units), 2):
+            scan = int.from_bytes(units[index:index+2], 'little')
+            events.append(INPUT(1, INPUTUNION(ki=KEYBDINPUT(0, scan, 0x0004, 0, 0))))
+            events.append(INPUT(1, INPUTUNION(ki=KEYBDINPUT(0, scan, 0x0004 | 0x0002, 0, 0))))
+        batch = (INPUT * len(events))(*events)
+        return ctypes.windll.user32.SendInput(len(events), batch, ctypes.sizeof(INPUT)) == len(events)
+    except Exception:
+        return False
+
+
+
 class CompanionHandler(servermod.H):
     def do_GET(self):
         if not self.authorized(): return
@@ -670,6 +733,33 @@ class CompanionHandler(servermod.H):
                 return self.sendb(b'Upload incomplete, invalid, or destination unavailable', code=400)
             finally:
                 if part: part.unlink(missing_ok=True)
+        if path == '/phone-screen/frame':
+            global PHONE_FRAME_BYTES, PHONE_FRAME_AT
+            try:
+                if self.headers.get('Transfer-Encoding'):
+                    raise ValueError('Length required')
+                n = int(self.headers.get('Content-Length', '-1'))
+                if not 128 <= n <= 1500000:
+                    raise ValueError('Invalid screen frame size')
+                frame = self.rfile.read(n)
+                if len(frame) != n or not frame.startswith(b'\xff\xd8') or not frame.endswith(b'\xff\xd9'):
+                    raise ValueError('Invalid JPEG frame')
+                with PHONE_FRAME_LOCK:
+                    PHONE_FRAME_BYTES = frame
+                    PHONE_FRAME_AT = time.monotonic()
+                servermod.mark_seen(self.client_address[0])
+                return self.sendb(b'OK')
+            except (ValueError, OSError):
+                self.close_connection = True
+                return self.sendb(b'Invalid mirror frame', code=400)
+        if path == '/type-live':
+            try:
+                body = self.body()
+                servermod.mark_seen(self.client_address[0])
+                ok = live_keyboard_edit(body)
+                return self.sendb(b'OK' if ok else b'Invalid keyboard edit', code=200 if ok else 400)
+            except Exception:
+                return self.sendb(b'Invalid keyboard edit', code=400)
         if path == '/record-toggle':
             self.body()
             servermod.mark_seen(self.client_address[0])

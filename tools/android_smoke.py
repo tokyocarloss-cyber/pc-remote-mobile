@@ -41,9 +41,9 @@ for i,theme in enumerate(['NEXUS Neon','Attack on Titan','Frutiger Aero','Dark S
     pref='<map><string name="theme">'+escape(theme)+'</string><boolean name="theme_sounds" value="false"/></map>'
     adb('shell',f"run-as {PACKAGE} sh -c 'cat > shared_prefs/nexus_settings.xml'",input=pref.encode())
     launch();screenshot(f'theme-{i:02}')
-for label in ['Apps','Mouse','Controle','Início']:
+for label in ['Roda','Arquivos','Teclado','Início']:
     tap(label);screenshot('page-'+label)
-for label in ['Arquivos','Tela','Teclado','Mídia','Configurações','Flow']:
+for label in ['Apps','Mouse','Controle','Tela PC','Tela celular','Mídia','Configurações','Flow']:
     tap('Mais');tap(label);screenshot('page-'+label)
 shell('settings','put','system','accelerometer_rotation','0')
 shell('settings','put','system','user_rotation','1');time.sleep(2);screenshot('landscape')
@@ -77,7 +77,7 @@ try:
     shell('am','force-stop',PACKAGE);launch();time.sleep(2)
     assert 'Conectado' in ET.tostring(nodes(),encoding='unicode'),'Persisted Keystore reconnect failed'
     screenshot('reconnected-tls')
-    tap('Mouse')
+    tap('Mais');tap('Mouse')
     shell('input','swipe','220','800','820','800','1500');time.sleep(.5)
     shell('input','swipe','820','800','220','800','1500');time.sleep(.5)
     events=[json.loads(line) for line in Path('fixture-mouse.jsonl').read_text().splitlines()]
@@ -90,4 +90,4 @@ finally:
     fixture.terminate();fixture.wait(timeout=10)
 crashes=shell('logcat','-d','-b','crash');(OUT/'crash-log.txt').write_text(crashes)
 assert 'FATAL EXCEPTION' not in crashes,crashes
-(OUT/'result.txt').write_text('PASS: 10 themes, 10 destinations, rotation, wrong PIN rejected, TLS pairing and persisted reconnect, no Java crash; touchpad commands reuse TLS connections. No physical-PC input assertion.\n')
+(OUT/'result.txt').write_text('PASS: 10 themes, 12 destinations, rotation, wrong PIN rejected, TLS pairing and persisted reconnect, no Java crash; touchpad commands reuse TLS connections. No physical-PC input assertion.\n')

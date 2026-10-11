@@ -61,6 +61,23 @@ object RemoteClient {
         } catch (_: Exception) { lastError = "Falha na conexão com o PC"; false }
         finally { if(!reusable) c?.disconnect() }
     }
+
+    /** Direct upload for explicitly granted phone storage, without a 4 GB temp copy. */
+    fun uploadFile(file: java.io.File): Boolean {
+        if (!file.isFile || !file.canRead() || Api.host.isBlank()) return false
+        var c: HttpURLConnection? = null
+        return try {
+            c=SecureConnection.open("/upload/"+URLEncoder.encode(file.name,"UTF-8"))
+            c.requestMethod="POST";c.doOutput=true;c.readTimeout=15000
+            c.setFixedLengthStreamingMode(file.length())
+            c.outputStream.use { output -> file.inputStream().use { input ->
+                input.copyTo(output,65536)
+            } }
+            result(c)
+        } catch (_: Exception) {lastError="Falha no envio de arquivo";false}
+        finally {c?.disconnect()}
+    }
+
     fun download(path: String, output: OutputStream, cancelled: AtomicBoolean = AtomicBoolean(false), progress: (Long,Long)->Unit = {_,_->}): Boolean {
         var c: HttpURLConnection? = null
         return try {
