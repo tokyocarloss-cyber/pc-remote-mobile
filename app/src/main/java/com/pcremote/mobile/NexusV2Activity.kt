@@ -111,6 +111,10 @@ private fun NexusV2App() {
         }
     }
 
+    LaunchedEffect(Api.connected) {
+        if (Api.connected) NexusEffects.play(ctx, NexusEffect.SELECT)
+    }
+
     LaunchedEffect(page) { if (page != 2 && page != 4) NexusFullscreen.active = false }
     LaunchedEffect(NexusFullscreen.active) {
         activity?.window?.decorView?.systemUiVisibility = if (NexusFullscreen.active) {
