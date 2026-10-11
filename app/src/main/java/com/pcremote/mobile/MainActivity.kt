@@ -66,7 +66,6 @@ private fun pairRequest(ip: String): Boolean = SecureConnection.authenticated(ip
 suspend fun connectToHost(raw: String, method: String): Boolean {
     val ip = raw.trim().removePrefix("http://").removePrefix("https://").substringBefore(':').substringBefore('/')
     if (ip.isBlank()) return false
-    SecureConnection.retryPairing()
     if (!Discovery.checkHost(ip)) return false
     val ok = withContext(Dispatchers.IO) { pairRequest(ip) }
     if (ok) {

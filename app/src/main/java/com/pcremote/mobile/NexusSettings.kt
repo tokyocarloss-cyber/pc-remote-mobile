@@ -108,6 +108,7 @@ fun NexusSettings() {
                             prefs.edit().putString("manual_ip", value).apply()
                             manualResult = "Testando $value:8765…"
                             scope.launch {
+                                SecureConnection.retryPairing()
                                 val ok = connectToHost(value, "IP manual")
                                 manualResult = if (ok) "Conectado com sucesso" else "Sem resposta na porta 8765. Verifique o NEXUS no PC e o Firewall."
                             }
@@ -119,6 +120,7 @@ fun NexusSettings() {
                     OutlinedButton(
                         onClick = {
                             Api.connected = false
+                            SecureConnection.retryPairing()
                             Discovery.detail = "Nova busca solicitada…"
                             manualResult = "Busca automática reiniciada"
                         },

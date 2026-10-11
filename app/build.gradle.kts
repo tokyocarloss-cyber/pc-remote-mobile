@@ -1,3 +1,9 @@
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.PI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -58,6 +64,7 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.compose.material3:material3")
@@ -83,15 +90,15 @@ val generateNexusAudio by tasks.registering {
         val multipliers = listOf(1.0,1.25,.75,1.5,.55,1.25,.75)
         bases.forEachIndexed { theme, base -> durations.forEachIndexed { event, duration ->
             val rate = 22050; val count = (rate * duration).toInt()
-            val bytes = java.nio.ByteBuffer.allocate(44 + count * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            val bytes = ByteBuffer.allocate(44 + count * 2).order(ByteOrder.LITTLE_ENDIAN)
             bytes.put("RIFF".toByteArray()).putInt(36+count*2).put("WAVEfmt ".toByteArray()).putInt(16)
             bytes.putShort(1.toShort()).putShort(1.toShort()).putInt(rate).putInt(rate*2).putShort(2.toShort()).putShort(16.toShort())
             bytes.put("data".toByteArray()).putInt(count*2)
             repeat(count) { i ->
                 val t=i.toDouble()/rate; val phase=t/duration
-                val envelope=kotlin.math.min(1.0,t/.008)*(1-phase)*(1-phase)
+                val envelope=min(1.0,t/.008)*(1-phase)*(1-phase)
                 val f=base*multipliers[event]
-                val tone=kotlin.math.sin(2*kotlin.math.PI*f*t)+.2*kotlin.math.sin(2*kotlin.math.PI*f*1.5*t)
+                val tone=sin(2*PI*f*t)+.2*sin(2*PI*f*1.5*t)
                 bytes.putShort((9500*envelope*tone).toInt().toShort())
             }
             raw.resolve("nexus_${theme}_${event}.wav").writeBytes(bytes.array())

@@ -94,3 +94,24 @@ class ApiTests(unittest.TestCase):
             pad.reset.assert_called_once()
 
 if __name__=='__main__':unittest.main()
+
+@unittest.skipUnless(__import__('os').name == 'nt', 'Windows DPAPI and TLS identity')
+class WindowsIdentityTests(unittest.TestCase):
+    def test_dpapi_and_tls_identity_persist(self):
+        original=b'private-test-value'
+        protected=security.protect(original)
+        self.assertNotIn(original,protected)
+        self.assertEqual(security.protect(protected,True),original)
+        with tempfile.TemporaryDirectory() as directory, patch.object(security,'DATA',Path(directory)):
+            ctx=security.tls_context();fingerprint=security.fingerprint()
+            self.assertEqual(len(fingerprint),64)
+            security.tls_context();self.assertEqual(security.fingerprint(),fingerprint)
+            class TlsServer(security.SecureServerMixin,ThreadingHTTPServer):pass
+            http=TlsServer(('127.0.0.1',0),nexus.H);http.tls=ctx
+            threading.Thread(target=http.serve_forever,daemon=True).start()
+            try:
+                import ssl
+                client=ssl.create_default_context(cafile=str(Path(directory)/'server.pem'));client.check_hostname=False
+                with urllib.request.urlopen('https://127.0.0.1:'+str(http.server_port)+'/ping',context=client) as r:
+                    self.assertEqual(r.read(),b'PC Remote')
+            finally:http.shutdown();http.server_close()

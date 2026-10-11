@@ -641,7 +641,7 @@ class CompanionHandler(servermod.H):
                 length = int(self.headers.get('Content-Length', '-1'))
                 if not 0 <= length <= 4 * 1024**3:
                     raise ValueError('Maximum upload is 4 GB')
-                name = urllib.parse.unquote(path[8:]).replace('+', ' ')
+                name = urllib.parse.unquote_plus(path[8:])
                 if not name or any(c in name for c in ('/', '\\', ':', '\x00')) or name in ('.','..'):
                     raise ValueError('Invalid filename')
                 # An exclusive staging file avoids concurrent same-name overwrites.

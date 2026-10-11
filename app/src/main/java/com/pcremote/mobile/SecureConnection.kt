@@ -22,7 +22,8 @@ object SecureConnection {
     var pendingHost by mutableStateOf("")
     var pendingFingerprint by mutableStateOf("")
     var error by mutableStateOf("")
-    private val dismissed = mutableSetOf<String>()
+    private val dismissed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val factories = java.util.concurrent.ConcurrentHashMap<String,SSLSocketFactory>()
     private fun prefs() = context.getSharedPreferences("nexus_secure", Context.MODE_PRIVATE)
     fun init(ctx: Context) { context = ctx.applicationContext }
     private fun key(): SecretKey {
@@ -46,7 +47,7 @@ object SecureConnection {
         prefs().edit().putString("pin:$host", fingerprint).putString("token:$host", encoded).putString("last_host", host).apply()
     }
     fun lastHost(): String = prefs().getString("last_host", "").orEmpty()
-    private fun fingerprint(cert: X509Certificate) = MessageDigest.getInstance("SHA-256").digest(cert.encoded).joinToString("") { "%02X".format(it) }
+    private fun fingerprint(cert: X509Certificate) = CertificatePin.digest(cert.encoded)
     private fun connection(host: String, path: String, pin: String?, observed: ((String)->Unit)? = null): HttpsURLConnection {
         val trust = object: X509TrustManager {
             override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
@@ -54,13 +55,13 @@ object SecureConnection {
             override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
                 require(chain.isNotEmpty())
                 val actual = fingerprint(chain[0])
-                if (pin != null && actual != pin) throw java.security.cert.CertificateException("Certificado do PC mudou. Confira o pareamento.")
+                if (pin != null && !CertificatePin.matches(chain[0].encoded,pin)) throw java.security.cert.CertificateException("Certificado do PC mudou. Confira o pareamento.")
                 observed?.invoke(actual)
             }
         }
         val ssl = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }
         return (URL("https://$host:8765$path").openConnection() as HttpsURLConnection).apply {
-            sslSocketFactory = ssl.socketFactory
+            sslSocketFactory = if(pin == null) ssl.socketFactory else factories.getOrPut(pin) { ssl.socketFactory }
             // Identity is the certificate SHA-256 checked above, independent of DHCP hostname.
             hostnameVerifier = HostnameVerifier { _, _ -> true }
             connectTimeout = 1500; readTimeout = 3000; useCaches = false
