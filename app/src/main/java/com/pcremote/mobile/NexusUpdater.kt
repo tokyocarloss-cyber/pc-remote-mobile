@@ -36,8 +36,9 @@ internal object NexusUpdateProtocol {
     private const val PREF = "nexus_pending_update"
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
 
+    @Suppress("DEPRECATION")
     private fun code(info: PackageInfo): Long =
-        if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+        if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
 
     fun currentCode(ctx: Context): Long {
         @Suppress("DEPRECATION")
@@ -190,7 +191,7 @@ fun NexusUpdater() {
                 val apkManifest=data.getJSONObject("android")
                 val expectedSize=apkManifest.getLong("size")
                 val expectedSha=apkManifest.getString("sha256")
-                if(expectedSize !in 1024..(250L*1024*1024) ||
+                if(expectedSize !in 1024L..(250L*1024*1024) ||
                     !expectedSha.matches(Regex("[a-f0-9]{64}")))
                     throw IllegalArgumentException("Metadados de atualização inválidos")
                 temp.parentFile?.mkdirs()
