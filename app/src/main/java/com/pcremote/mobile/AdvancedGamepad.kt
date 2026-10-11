@@ -6,6 +6,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.awaitPointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -278,21 +282,34 @@ fun AdvancedGamepad(overlay: Boolean = false, forceEdit: Boolean = false) {
                             .offset(w * basePos.x, h * basePos.y)
                             .size((stickSize * scale).dp)
                             .background(NexusUi.PanelRaised.copy(alpha = .65f), CircleShape)
-                            .pointerInput(edit, side) {
-                                if (!edit) detectDragGestures(
-                                    onDragEnd = { knob = Offset.Zero; stick(side, 0f, 0f) },
-                                    onDragCancel = { knob = Offset.Zero; stick(side, 0f, 0f) }
-                                ) { change, d ->
-                                    change.consume()
-                                    val radius = constraints.maxWidth / 2f
-                                    val next = knob + d
-                                    val len = next.getDistance()
-                                    knob = if (len > radius) next * (radius / len) else next
-                                    stick(
-                                        side,
-                                        (knob.x / radius).coerceIn(-1f, 1f),
-                                        (knob.y / radius).coerceIn(-1f, 1f)
-                                    )
+                            .pointerInput(edit, side, scale) {
+                                if (!edit) awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    val center = Offset(size.width / 2f, size.height / 2f)
+                                    val radius = size.minDimension * .36f
+                                    fun move(position: Offset) {
+                                        val displacement = position - center
+                                        val distance = displacement.getDistance()
+                                        knob = if (distance > radius) displacement * (radius / distance) else displacement
+                                        stick(side, (knob.x / radius).coerceIn(-1f,1f),
+                                            (knob.y / radius).coerceIn(-1f,1f))
+                                    }
+                                    try {
+                                        move(down.position)
+                                        var active = true
+                                        while (active) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == down.id }
+                                            if (change == null || !change.pressed) active = false
+                                            else {
+                                                move(change.position)
+                                                change.consume()
+                                            }
+                                        }
+                                    } finally {
+                                        knob = Offset.Zero
+                                        stick(side,0f,0f)
+                                    }
                                 }
                             },
                         contentAlignment = Alignment.Center
