@@ -1,10 +1,11 @@
 name: Build Windows Companion
 on:
   push:
-    branches: [full-redesign]
+    branches: [full-redesign, 'nexus-v2-stability-sound-*']
     paths:
       - "windows/**"
       - ".github/workflows/build-windows.yml"
+  pull_request:
   workflow_dispatch:
 jobs:
   build:
@@ -28,6 +29,8 @@ jobs:
           python -c "import pystray, PIL, tkinterdnd2, mss; print('Runtime dependencies OK')"
       - name: Validate Python sources
         run: python -m py_compile pc_remote_server.py drop_edge.py companion_v2.py
+      - name: Test HTTP safety and file streaming
+        run: python -m unittest discover -s tests -v
       - name: Validate tray menu
         run: python -c "import companion_v2; companion_v2.make_menu(); print('Tray menu OK')"
       - name: Build PC Remote EXE

@@ -37,10 +37,19 @@ val NexusUi.cardRadius: Int
     }
 
 object NexusEffects {
+    // Reuse one audio generator. Previously each touch spawned a new thread and
+    // created a new audio device, causing occasional latency, skips and crackling.
+    private val lock = Any()
+    private var generator: ToneGenerator? = null
+    private var generatorVolume = -1
+    private var lastTickAt = 0L
+
     fun play(context: Context, effect: NexusEffect) {
-        val enabled = context.getSharedPreferences("nexus_settings", Context.MODE_PRIVATE)
-            .getBoolean("theme_sounds", true)
-        if (!enabled) return
+        val prefs = context.getSharedPreferences("nexus_settings", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("theme_sounds", true)) return
+        val volume = prefs.getInt("sound_volume", 18).coerceIn(0, 100)
+        if (volume == 0) return
+
         val tone = when (NexusUi.currentTheme) {
             "Attack on Titan" -> when (effect) {
                 NexusEffect.SELECT -> ToneGenerator.TONE_PROP_ACK
@@ -77,19 +86,28 @@ object NexusEffects {
             }
         }
         val duration = when (effect) {
-            NexusEffect.TICK, NexusEffect.TAP -> 35
+            NexusEffect.TICK, NexusEffect.TAP -> 32
             NexusEffect.OPEN -> 55
             NexusEffect.SELECT -> 80
             NexusEffect.ERROR -> 110
         }
-        thread(isDaemon = true, name = "NexusUiSound") {
-            try {
-                val tg = ToneGenerator(AudioManager.STREAM_SYSTEM, 18)
-                tg.startTone(tone, duration)
-                Thread.sleep((duration + 25).toLong())
-                tg.release()
-            } catch (_: Exception) {}
+        synchronized(lock) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if ((effect == NexusEffect.TICK || effect == NexusEffect.TAP) && now - lastTickAt < 55L) return
+            lastTickAt = now
+            if (generator == null || generatorVolume != volume) {
+                runCatching { generator?.release() }
+                generator = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, volume) }.getOrNull()
+                generatorVolume = volume
+            }
+            runCatching { generator?.startTone(tone, duration) }
         }
+    }
+
+    fun release() = synchronized(lock) {
+        runCatching { generator?.release() }
+        generator = null
+        generatorVolume = -1
     }
 }
 
