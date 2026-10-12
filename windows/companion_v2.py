@@ -12,6 +12,8 @@ except Exception:
     mss = None
 from PIL import Image, ImageDraw
 
+import json
+import entertainment_hub as entertainment
 import pc_remote_server as servermod
 from pc_remote_server import PORT, DISCOVERY_PORT, ROOT, GAMEPAD, local_ip, phone_connected, run_discovery_responder
 from drop_edge import DropEdge
@@ -533,9 +535,40 @@ def zoom_wheel(raw):
 
 
 class CompanionHandler(servermod.H):
+    def entertainment_response(self, value, code=200):
+        return self.sendb(json.dumps(value, ensure_ascii=False).encode('utf-8'),
+                          'application/json; charset=utf-8', code)
+
+    def entertainment_auth(self):
+        if not self.allow_local():
+            return False
+        if not entertainment.authenticated(self.headers.get('X-Nexus-Central-Key', '')):
+            self.entertainment_response({'error': 'Código da Central inválido'}, 401)
+            return False
+        return True
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        if path.startswith('/entertainment/'):
+            if not self.entertainment_auth():
+                return
+            try:
+                q = urllib.parse.parse_qs(parsed.query)
+                if path == '/entertainment/status':
+                    return self.entertainment_response({'ok': True, 'connected': True})
+                if path == '/entertainment/search':
+                    kind = q.get('type', [''])[0]
+                    term = q.get('q', [''])[0]
+                    return self.entertainment_response({'items': entertainment.search(kind, term)})
+                if path == '/entertainment/library':
+                    kind = q.get('type', [''])[0]
+                    return self.entertainment_response({'items': entertainment.library(kind)})
+                if path == '/entertainment/downloads':
+                    return self.entertainment_response({'items': entertainment.list_downloads()})
+                return self.entertainment_response({'error': 'Rota desconhecida'}, 404)
+            except Exception as exc:
+                return self.entertainment_response({'error': str(exc)[:170]}, 400)
         if path == '/fs/list':
             q = urllib.parse.parse_qs(parsed.query)
             raw_path = q.get('path', [''])[0]
@@ -618,6 +651,34 @@ class CompanionHandler(servermod.H):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if path.startswith('/entertainment/'):
+            if not self.entertainment_auth():
+                return
+            try:
+                if int(self.headers.get('Content-Length', '0')) > 8192:
+                    return self.entertainment_response({'error': 'Solicitação grande demais'}, 413)
+                raw = self.body()
+                data = json.loads(raw.decode('utf-8'))
+                if not isinstance(data, dict):
+                    raise ValueError('Objeto JSON esperado')
+                if path == '/entertainment/download':
+                    result = entertainment.start_download(data.get('url', ''))
+                elif path == '/entertainment/cancel':
+                    result = entertainment.cancel_download(data.get('id', ''))
+                elif path == '/entertainment/play':
+                    result = entertainment.play_video(str(data.get('id', '')))
+                elif path == '/entertainment/launch-game':
+                    result = entertainment.launch_game(str(data.get('id', '')))
+                elif path == '/entertainment/steam':
+                    result = entertainment.steam_action(data.get('id', ''), data.get('action', ''))
+                elif path == '/entertainment/open':
+                    result = entertainment.open_catalog_link(data.get('url', ''))
+                else:
+                    return self.entertainment_response({'error': 'Rota desconhecida'}, 404)
+                servermod.mark_seen(self.client_address[0])
+                return self.entertainment_response(result)
+            except Exception as exc:
+                return self.entertainment_response({'error': str(exc)[:170]}, 400)
         if path.startswith('/upload/'):
             try:
                 raw = self.body()
@@ -712,6 +773,16 @@ def repair_firewall(icon=None, item=None):
         message('NEXUS PC Remote', 'Não foi possível configurar o Firewall.')
 
 
+def copy_entertainment_key(icon=None, item=None):
+    try:
+        servermod.set_clipboard(entertainment.pairing_key())
+        if tray_icon:
+            tray_icon.notify('Cole o código na aba Cinema ou Jogos do Android.',
+                             'Código NEXUS Central copiado')
+    except Exception:
+        message('NEXUS Central', 'Não foi possível copiar o código.')
+
+
 def open_downloads(icon=None, item=None):
     os.startfile(str(RECEIVED_DIR))
 
@@ -777,6 +848,7 @@ def make_menu():
         ),
         pystray.MenuItem('Abrir arquivos do celular', open_phone_files),
         pystray.MenuItem('Abrir Downloads', open_downloads),
+        pystray.MenuItem('Copiar código NEXUS Central', copy_entertainment_key),
         pystray.MenuItem('Sair', stop)
     )
 
