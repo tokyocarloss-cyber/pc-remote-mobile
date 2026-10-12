@@ -202,7 +202,7 @@ fun EntertainmentHub(games: Boolean) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Parear a Central", fontWeight = FontWeight.Bold, color = NexusUi.Text)
                     Text(
-                        "No Windows: ícone do NEXUS ao lado do relógio → Copiar código NEXUS Central. Cole o código abaixo.",
+                        "No Windows: ícone do NEXUS ao lado do relógio → Mostrar código NEXUS Central. Digite o código abaixo.",
                         color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall
                     )
                     OutlinedTextField(value = code, onValueChange = { code = it.trim() },
