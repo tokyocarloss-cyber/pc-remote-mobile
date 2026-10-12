@@ -1,3 +1,35 @@
+# NEXUS PC Remote — Entertainment Hub 1.2 (teste)
+
+Esta branch continua `full-redesign` e acrescenta **Cinema** e **Jogos** sem remover o controle de mouse, teclado, arquivos, streaming ou a biblioteca existente.
+
+## Como testar no Android + Windows
+1. Instale o APK de teste e o novo companion EXE produzidos em **Actions** nesta branch (ou na pull request).
+2. Abra o NEXUS Windows e conecte o celular à **mesma rede privada confiável**.
+3. No ícone do NEXUS na bandeja do Windows, clique **Copiar código NEXUS Central**.
+4. No Android, abra **Cinema** ou **Jogos**, cole o código e clique **Conectar Central**.
+
+## Cinema
+- **Filmes**: pesquisa metadados na iTunes Search API. Capas, sinopse e link informativo na Apple TV / iTunes. Não fornece o filme completo.
+- **Séries**: pesquisa metadados no TVMaze. A página do TVMaze é informativa, não a reprodução de episódios.
+- **Meus vídeos**: examina até 160 arquivos com extensões de vídeo na pasta Vídeos do Windows e na pasta `Vídeos/NEXUS`. O botão **Reproduzir no PC** abre o vídeo no player padrão do Windows.
+- **Downloads**: aceita apenas URLs diretas HTTPS de vídeos com início `https://archive.org/download/`, destinadas a conteúdos que você está autorizado a baixar. O arquivo é baixado **pelo PC** para `Vídeos/NEXUS`. Fila de até 2 downloads simultâneos, progresso, cancelamento e limite de 10 GB por arquivo. Os resultados de pesquisas por filmes **não fornecem links de download**.
+
+## Jogos
+- **Pesquisar**: busca títulos públicos no catálogo da Steam e apresenta capa e nome.
+- **Steam**: abre a página do jogo no cliente oficial.
+- **Instalar**: envia `steam://install/<appid>` ao PC. A Steam decide se o usuário tem licença e conduz a instalação; não é download alternativo, não bypassa DRM.
+- **Instalados**: lista jogos detectados pelo companion e permite iniciá-los no PC.
+
+## Segurança e limites
+- As novas rotas exigem chave aleatória persistida localmente no Windows, copiada voluntariamente pelo menu da bandeja; a chave é enviada em header pelo Android.
+- A conexão ainda é HTTP local, sem criptografia TLS; use **apenas Wi-Fi/rede LAN confiável**. As outras rotas legadas do NEXUS continuam com as limitações de autenticação existentes.
+- Downloads do Archive.org não garantem que toda obra tenha licença para redistribuição ou que esteja livre de direitos no Brasil. Verifique permissões antes de usar.
+- Uma pesquisa por qualquer título pode mostrar metadados mesmo quando o conteúdo **não** estiver disponível para download.
+- Search endpoints de Apple, TVMaze e Steam dependem de Internet e de serviços externos, que podem mudar ou limitar as requisições.
+- O app não baixa jogos pirateados. SteamRIP não foi integrada. Fontes alternativas só devem ser adicionadas após avaliação de licenças e segurança.
+- Compilação CI não substitui teste real no smartphone, PC e roteador.
+
+## Versão anterior e estrutura
 # NEXUS PC Remote — Atualização de estabilidade 1.1
 
 Esta é a continuação da versão **full-redesign**, preservando as dez skins, biblioteca de jogos, Flow, controle avançado, tela remota, transferência de arquivos e companion Windows.
