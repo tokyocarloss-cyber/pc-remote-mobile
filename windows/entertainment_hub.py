@@ -271,7 +271,7 @@ def _download(job_id, url):
                 raise ValueError("Arquivo excede 10 GB")
             p = urllib.parse.urlsplit(url)
             filename = Path(urllib.parse.unquote(p.path)).name
-            filename = re.sub(r'[<>:"/\\|?*\\x00-\\x1f]', "_", filename).strip(" .")[:140]
+            filename = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename).strip(" .")[:140]
             if not filename or Path(filename).suffix.lower() not in SUFFIXES:
                 raise ValueError("Extensão de vídeo inválida")
             target = VIDEO_DIR / filename
