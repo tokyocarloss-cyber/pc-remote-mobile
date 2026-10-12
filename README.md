@@ -5,7 +5,7 @@ Esta branch continua `full-redesign` e acrescenta **Cinema** e **Jogos** sem rem
 ## Como testar no Android + Windows
 1. Instale o APK de teste e o novo companion EXE produzidos em **Actions** nesta branch (ou na pull request).
 2. Abra o NEXUS Windows e conecte o celular à **mesma rede privada confiável**.
-3. No ícone do NEXUS na bandeja do Windows, clique **Copiar código NEXUS Central**.
+3. No ícone do NEXUS na bandeja do Windows, clique **Mostrar código NEXUS Central** e digite-o no celular, ou use **Copiar código** quando houver área de transferência compartilhada.
 4. No Android, abra **Cinema** ou **Jogos**, cole o código e clique **Conectar Central**.
 
 ## Cinema
