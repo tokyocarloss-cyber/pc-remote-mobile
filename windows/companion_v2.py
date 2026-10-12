@@ -773,6 +773,13 @@ def repair_firewall(icon=None, item=None):
         message('NEXUS PC Remote', 'Não foi possível configurar o Firewall.')
 
 
+def show_entertainment_key(icon=None, item=None):
+    message('NEXUS Central — código de pareamento',
+            'Digite no aplicativo Android o código abaixo:\\n\\n'
+            + entertainment.pairing_key()
+            + '\\n\\nUse somente na sua rede local confiável.')
+
+
 def copy_entertainment_key(icon=None, item=None):
     try:
         servermod.set_clipboard(entertainment.pairing_key())
@@ -848,6 +855,7 @@ def make_menu():
         ),
         pystray.MenuItem('Abrir arquivos do celular', open_phone_files),
         pystray.MenuItem('Abrir Downloads', open_downloads),
+        pystray.MenuItem('Mostrar código NEXUS Central', show_entertainment_key),
         pystray.MenuItem('Copiar código NEXUS Central', copy_entertainment_key),
         pystray.MenuItem('Sair', stop)
     )
