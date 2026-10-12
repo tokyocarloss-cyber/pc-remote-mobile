@@ -69,7 +69,7 @@ class HubTests(unittest.TestCase):
         video_id = hub.library("video")[0]["id"]
         with mock.patch.object(hub.os, "startfile", create=True) as startfile:
             hub.play_video(video_id)
-            startfile.assert_called_once_with(str(movie))
+            startfile.assert_called_once_with(str(movie.resolve()))
         with self.assertRaises(ValueError):
             hub.play_video("arbitrary-path")
 
@@ -99,7 +99,11 @@ class ApiTests(unittest.TestCase):
             with urllib.request.urlopen(request, timeout=5) as response:
                 return response.status, json.loads(response.read())
         except urllib.error.HTTPError as err:
-            return err.code, json.loads(err.read())
+            raw = err.read().decode("utf-8")
+            try:
+                return err.code, json.loads(raw)
+            except json.JSONDecodeError:
+                return err.code, {"error": raw}
 
     def test_pairing_required_for_new_routes(self):
         self.assertEqual(self.call("/entertainment/status")[0], 401)
