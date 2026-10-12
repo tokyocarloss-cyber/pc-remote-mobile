@@ -775,9 +775,9 @@ def repair_firewall(icon=None, item=None):
 
 def show_entertainment_key(icon=None, item=None):
     message('NEXUS Central — código de pareamento',
-            'Digite no aplicativo Android o código abaixo:\\n\\n'
+            'Digite no aplicativo Android o código abaixo:\n\n'
             + entertainment.pairing_key()
-            + '\\n\\nUse somente na sua rede local confiável.')
+            + '\n\nUse somente na sua rede local confiável.')
 
 
 def copy_entertainment_key(icon=None, item=None):
