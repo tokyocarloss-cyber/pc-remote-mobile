@@ -269,6 +269,7 @@ internal object HubPc {
 
 internal object HubSync {
     private val syncLock = java.util.concurrent.atomic.AtomicBoolean(false)
+    @Volatile private var lastLibraryScan = 0L
     fun schedule(context: Context) {
         val request = PeriodicWorkRequestBuilder<HubSyncWorker>(15, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
@@ -283,12 +284,15 @@ internal object HubSync {
             if (HubStore.savedHost(context).isBlank() || HubStore.key(context).isBlank()) return false
             try { HubPc.request(context, "/entertainment/status") }
             catch (_: Exception) { return false }
-            for (kind in listOf("game", "video")) {
+            if (System.currentTimeMillis() - lastLibraryScan > 120_000L) {
+                lastLibraryScan = System.currentTimeMillis()
+                for (kind in listOf("game", "video")) {
                 try {
                     val a = HubPc.request(context, "/entertainment/library?type=$kind").optJSONArray("items")
                     if (a != null) HubStore.cacheLocal(context, kind,
                         (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(HubItem::from) })
                 } catch (_: Exception) { }
+                }
             }
             for (task in HubStore.tasks(context).filter { it.status == "waiting" }) {
                 try {
