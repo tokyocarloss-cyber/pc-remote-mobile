@@ -2,6 +2,29 @@
 
 Esta branch preserva as funções anteriores do NEXUS e corrige a arquitetura do Cinema e dos Jogos: **o catálogo pode ser usado no celular sem o PC ligado ou pareado**.
 
+## NEXUS Cinema 1.3.1 — Fontes oficiais + comunidade
+
+A aba **Cinema > Fontes** reúne os dois tipos de serviços lado a lado, sem exigir pareamento:
+
+| Categoria | Fonte | Função |
+|---|---|---|
+| Oficial | JustWatch Brasil | Descobrir onde assistir legalmente |
+| Oficial | Pluto TV | Streaming gratuito com anúncios |
+| Oficial | Apple TV | Streaming e loja oficial |
+| Oficial | TVmaze | Informações sobre séries |
+| Acervo | Internet Archive | Localizar conteúdo de arquivo; conferir direitos antes de baixar |
+| Comunidade | Megathread Pirataria | Diretório de sites da comunidade lusófona |
+| Comunidade | Torrent dos Filmes | Pesquisa pelo nome; vários domínios usam essa marca e **não foi confirmado um domínio oficial** |
+| Comunidade | BTDig | Índice público DHT com busca por nome |
+| Comunidade | EXT Torrents | Índice pesquisável por título |
+| Comunidade | Hattered | Diretório comunitário de sites e ferramentas |
+
+As fontes são apresentadas claramente como **links externos** em vez de resultados supostamente disponíveis. Você pode pesquisar ou abrir pelo navegador **do celular**, adicionar diretórios aos favoritos locais e agendar **No PC depois**. As opções `PT-BR dublado`, `Dual áudio`, `720p`, `1080p` e `4K` adicionam termos de pesquisa aos índices de terceiros, **não verificam nem garantem** idiomas, direitos, qualidade ou disponibilidade.
+
+O app **não baixa automaticamente torrents, não transfere magnets ou arquivos protegidos para o PC e não desativa antivírus**. A fila somente solicita ao PC que abra as páginas permitidas no navegador. Os downloads automáticos já existentes continuam limitados a vídeos autorizados com URL direta do Internet Archive.
+
+Os endereços de BTDig, EXT, Megathread e Hattered foram checados antes da integração. No caso de **Torrent dos Filmes**, sites com nomes parecidos aparecem na web; preferimos abrir uma pesquisa pelo nome sem afirmar que um espelho específico é oficial.
+
 ## Uso no celular, com PC desligado
 - **Jogos > Steam:** busca diretamente pelo Android usando o catálogo público da Steam; é possível salvar favoritos e deixar um pedido de instalação na fila.
 - **Jogos > SteamRIP:** pesquisa páginas públicas diretamente pelo Android e permite abrir o site no **navegador do celular**. Há opção separada de abrir a página no PC depois; esta fonte **não** inicia downloads ou executa cracks automaticamente. Se o site bloquear a busca automatizada, use o botão "Pesquisar SteamRIP no celular".
