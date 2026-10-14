@@ -211,7 +211,7 @@ private fun V2Header(settings:()->Unit){
             Text("Meu PC",color=NexusUi.Text,fontWeight=FontWeight.Black,fontSize=19.sp)
             Row(verticalAlignment=Alignment.CenterVertically){
                 Box(Modifier.size(7.dp).background(if(Api.connected)NexusUi.Success else NexusUi.Muted,CircleShape));Spacer(Modifier.width(6.dp))
-                Text(if(Api.connected)"Conectado • ${Api.host}" else "Procurando PC…",color=if(Api.connected)NexusUi.Success else NexusUi.Muted,fontSize=10.sp)
+                Text(if(Api.connected)"Conectado • ${Api.host}" else "Bibliotecas disponíveis • PC desconectado",color=if(Api.connected)NexusUi.Success else NexusUi.Muted,fontSize=10.sp)
             }
         }
         IconButton(onClick=settings,modifier=Modifier.size(44.dp).background(NexusUi.PanelRaised,RoundedCornerShape(NexusUi.cardRadius.dp))){Icon(Icons.Default.Settings,"Configurações",tint=NexusUi.Text)}
