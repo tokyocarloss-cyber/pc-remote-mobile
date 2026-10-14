@@ -1,43 +1,35 @@
-# NEXUS PC Remote — Entertainment Hub 1.2 (teste)
+# NEXUS PC Remote 1.3 — Bibliotecas independentes e fila de downloads
 
-Esta branch continua `full-redesign` e acrescenta **Cinema** e **Jogos** sem remover o controle de mouse, teclado, arquivos, streaming ou a biblioteca existente.
+Esta branch preserva as funções anteriores do NEXUS e corrige a arquitetura do Cinema e dos Jogos: **o catálogo pode ser usado no celular sem o PC ligado ou pareado**.
 
-## Como testar no Android + Windows
-1. Instale o APK de teste e o novo companion EXE produzidos em **Actions** nesta branch (ou na pull request).
-2. Abra o NEXUS Windows e conecte o celular à **mesma rede privada confiável**.
-3. No ícone do NEXUS na bandeja do Windows, clique **Mostrar código NEXUS Central** e digite-o no celular, ou use **Copiar código** quando houver área de transferência compartilhada.
-4. No Android, abra **Cinema** ou **Jogos**, cole o código e clique **Conectar Central**.
+## Uso no celular, com PC desligado
+- **Jogos > Steam:** busca diretamente pelo Android usando o catálogo público da Steam; é possível salvar favoritos e deixar um pedido de instalação na fila.
+- **Jogos > SteamRIP:** pesquisa páginas públicas diretamente pelo Android e permite abrir o site no **navegador do celular**. Há opção separada de abrir a página no PC depois; esta fonte **não** inicia downloads ou executa cracks automaticamente. Se o site bloquear a busca automatizada, use o botão "Pesquisar SteamRIP no celular".
+- **Cinema > Filmes:** busca informações, cartazes e links da iTunes Search API diretamente do Android.
+- **Cinema > Séries:** busca informações do TVMaze diretamente do Android.
+- **Favoritos:** ficam salvos na memória do telefone e podem ser abertos sem rede (capas dependem de estarem no cache do sistema).
+- **Última biblioteca do PC:** jogos e vídeos detectados durante a última sincronização são salvos no Android, para consulta sem PC. O app não pode conhecer arquivos de um PC com o qual nunca se conectou.
+- **Fila:** tarefas ficam armazenadas no Android mesmo quando o computador está desligado. A fila inclui pedidos de instalação via Steam, downloads autorizados de vídeo do Internet Archive e abertura de links/páginas no Windows. O celular não armazena os arquivos pesados que serão baixados pelo PC.
+- Uma pesquisa nova exige Internet no celular, mas **não** exige conexão com o PC. Resultados de buscas feitas anteriormente podem ser recuperados da memória do app quando a Internet não está disponível.
 
-## Cinema
-- **Filmes**: pesquisa metadados na iTunes Search API. Capas, sinopse e link informativo na Apple TV / iTunes. Não fornece o filme completo.
-- **Séries**: pesquisa metadados no TVMaze. A página do TVMaze é informativa, não a reprodução de episódios.
-- **Meus vídeos**: examina até 160 arquivos com extensões de vídeo na pasta Vídeos do Windows e na pasta `Vídeos/NEXUS`. O botão **Reproduzir no PC** abre o vídeo no player padrão do Windows.
-- **Downloads**: aceita apenas URLs diretas HTTPS de vídeos com início `https://archive.org/download/`, destinadas a conteúdos que você está autorizado a baixar. O arquivo é baixado **pelo PC** para `Vídeos/NEXUS`. Fila de até 2 downloads simultâneos, progresso, cancelamento e limite de 10 GB por arquivo. Os resultados de pesquisas por filmes **não fornecem links de download**.
+## Sincronização com Windows
+1. No primeiro pareamento, abra no Windows: bandeja do NEXUS → **Mostrar código NEXUS Central**. Copie ou digite uma única vez na configuração opcional de PC dentro de Cinema/Jogos.
+2. Depois, você pode escolher jogos e vídeos mesmo com o PC desligado. O app tenta sincronizar enquanto essas telas estão abertas e, em segundo plano, o Android agenda verificações pelo WorkManager a cada ~15 minutos (a execução exata depende do sistema e suas restrições de bateria/rede).
+3. Quando encontra o companion no endereço de rede previamente salvo, envia cada tarefa **uma vez**; o Windows mantém recibos de IDs da fila para evitar repetir instalações e comandos após reconexões.
+4. Se o endereço IP do computador mudar, pode ser necessário abrir o NEXUS no celular para ele descobrir o PC novamente.
+5. **Enviado ao PC** significa que o Windows aceitou a tarefa, não que download ou instalação terminaram. A Steam pode pedir login, licença ou confirmação. O computador precisa estar ligado e com o companion em execução para começar as operações.
 
-## Jogos
-- **Pesquisar**: busca títulos públicos no catálogo da Steam e apresenta capa e nome.
-- **Steam**: abre a página do jogo no cliente oficial.
-- **Instalar**: envia `steam://install/<appid>` ao PC. A Steam decide se o usuário tem licença e conduz a instalação; não é download alternativo, não bypassa DRM.
-- **Instalados**: lista jogos detectados pelo companion e permite iniciá-los no PC.
+## Limitações e segurança
+- Não há servidor na nuvem, então um PC desligado não pode receber comandos na hora; a **fila fica no celular** até uma sincronização local posterior.
+- A busca por filmes e séries retorna metadados, **não disponibiliza automaticamente vídeos protegidos por direitos autorais**. Downloads diretos permitidos ficam restritos a vídeos de `archive.org/download/`; verifique as permissões do item antes de baixar.
+- A SteamRIP é um site de terceiros, sujeito a bloqueios de busca; não há instalação ou download automático dessa fonte. **Não desative o antivírus** para executáveis desconhecidos.
+- A comunicação com o PC continua sendo HTTP na LAN e as funções legadas têm limitações de autenticação. **Use somente em redes locais confiáveis; não exponha as portas do NEXUS à Internet**.
+- Os dados locais persistem enquanto o armazenamento do app não for limpo ou desinstalado. A sincronização não substitui backup.
+- Builds automatizadas validam a compilação, mas são necessários testes em aparelhos reais.
 
-### SteamRIP (opcional)
-- **SteamRIP** aparece como fonte separada da Steam oficial na aba Jogos.
-- A pesquisa tenta consultar as páginas públicas da SteamRIP e mostrar título, capa (quando disponível) e link original, sem gerar resultados fictícios.
-- **Abrir página no PC** envia o endereço verificado ao navegador padrão do Windows.
-- Se a busca automática estiver bloqueada por mecanismos anti-bot, **Abrir pesquisa no navegador do PC** permite navegar diretamente.
-- Domínio fixo: `https://steamrip.com/`. URLs recebidas são validadas para evitar domínios falsos e redirecionamentos inesperados.
-- **Não existe download automático, extração de arquivos, desativação de antivírus nem execução automática de jogos provenientes dessa fonte.** O NEXUS não garante segurança ou licença de conteúdos fornecidos por terceiros.
-- Esta integração não substitui a instalação oficial via Steam; programas externos devem ser avaliados pelo usuário antes de executar.
-
-
-## Segurança e limites
-- As novas rotas exigem chave aleatória persistida localmente no Windows, copiada voluntariamente pelo menu da bandeja; a chave é enviada em header pelo Android.
-- A conexão ainda é HTTP local, sem criptografia TLS; use **apenas Wi-Fi/rede LAN confiável**. As outras rotas legadas do NEXUS continuam com as limitações de autenticação existentes.
-- Downloads do Archive.org não garantem que toda obra tenha licença para redistribuição ou que esteja livre de direitos no Brasil. Verifique permissões antes de usar.
-- Uma pesquisa por qualquer título pode mostrar metadados mesmo quando o conteúdo **não** estiver disponível para download.
-- Search endpoints de Apple, TVMaze e Steam dependem de Internet e de serviços externos, que podem mudar ou limitar as requisições.
-- O app não baixa jogos pirateados. SteamRIP não foi integrada. Fontes alternativas só devem ser adicionadas após avaliação de licenças e segurança.
-- Compilação CI não substitui teste real no smartphone, PC e roteador.
+## Arquivos
+- Android: `app/src/main/java/com/pcremote/mobile/EntertainmentData.kt` (catálogos, cache, fila e WorkManager), `EntertainmentHub.kt` (interface).
+- Windows: `windows/entertainment_hub.py` (dispatcher idempotente e downloads) e `windows/companion_v2.py` (rotas autenticadas).
 
 ## Versão anterior e estrutura
 # NEXUS PC Remote — Atualização de estabilidade 1.1
