@@ -70,6 +70,36 @@ class HubTests(unittest.TestCase):
                 hub.dispatch_task(task, "archive_download",
                                   {"url": "https://bad.example/installer.exe"})
 
+    def test_cinema_directory_sources_are_allowlisted(self):
+        self.assertEqual(hub.cinema_source_url("megathread"), "https://pirataria.link/")
+        self.assertEqual(hub.cinema_source_url("hattered"),
+                         "https://mefrraz.github.io/hattered/index.html")
+        self.assertEqual(hub.cinema_source_url("justwatch"), "https://br.justwatch.com/br")
+        self.assertEqual(hub.cinema_source_url("btdig", "Filme Dublado"),
+                         "https://btdig.com/search?q=Filme+Dublado&p=0")
+        self.assertIn("q=Filme+Teste", hub.cinema_source_url("ext", "Filme Teste"))
+        self.assertEqual(hub.cinema_source_url("torrentdosfilmes", "").split("?")[0],
+                         "https://www.google.com/search")
+        for raw in ("", "evil", "file:///etc/passwd", "https://localhost"):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                hub.cinema_source_url(raw, "test")
+        with self.assertRaises(ValueError):
+            hub.cinema_source_url("ext", "x" * 181)
+
+    def test_deferred_cinema_source_opens_once(self):
+        receipt = Path(self.temp.name) / "source_receipts.json"
+        task = "eece290a-a019-4fd1-9606-6715a08f3c3d"
+        with mock.patch.object(hub, "RECEIPTS_FILE", receipt), \
+                mock.patch.object(hub.os, "startfile", create=True) as open_url:
+            a = hub.dispatch_task(task, "source_open",
+                                  {"source": "btdig", "query": "ptbr dublado"})
+            b = hub.dispatch_task(task, "source_open",
+                                  {"source": "btdig", "query": "ptbr dublado"})
+        self.assertTrue(a["ok"])
+        self.assertFalse(a["duplicate"])
+        self.assertTrue(b["duplicate"])
+        open_url.assert_called_once_with("https://btdig.com/search?q=ptbr+dublado&p=0")
+
     def test_steam_install_uses_official_client(self):
         with mock.patch.object(hub.os, "startfile", create=True) as startfile:
             hub.steam_action("620", "install")
