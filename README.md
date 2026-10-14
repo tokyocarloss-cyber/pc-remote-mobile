@@ -20,6 +20,16 @@ Esta branch continua `full-redesign` e acrescenta **Cinema** e **Jogos** sem rem
 - **Instalar**: envia `steam://install/<appid>` ao PC. A Steam decide se o usuário tem licença e conduz a instalação; não é download alternativo, não bypassa DRM.
 - **Instalados**: lista jogos detectados pelo companion e permite iniciá-los no PC.
 
+### SteamRIP (opcional)
+- **SteamRIP** aparece como fonte separada da Steam oficial na aba Jogos.
+- A pesquisa tenta consultar as páginas públicas da SteamRIP e mostrar título, capa (quando disponível) e link original, sem gerar resultados fictícios.
+- **Abrir página no PC** envia o endereço verificado ao navegador padrão do Windows.
+- Se a busca automática estiver bloqueada por mecanismos anti-bot, **Abrir pesquisa no navegador do PC** permite navegar diretamente.
+- Domínio fixo: `https://steamrip.com/`. URLs recebidas são validadas para evitar domínios falsos e redirecionamentos inesperados.
+- **Não existe download automático, extração de arquivos, desativação de antivírus nem execução automática de jogos provenientes dessa fonte.** O NEXUS não garante segurança ou licença de conteúdos fornecidos por terceiros.
+- Esta integração não substitui a instalação oficial via Steam; programas externos devem ser avaliados pelo usuário antes de executar.
+
+
 ## Segurança e limites
 - As novas rotas exigem chave aleatória persistida localmente no Windows, copiada voluntariamente pelo menu da bandeja; a chave é enviada em header pelo Android.
 - A conexão ainda é HTTP local, sem criptografia TLS; use **apenas Wi-Fi/rede LAN confiável**. As outras rotas legadas do NEXUS continuam com as limitações de autenticação existentes.
