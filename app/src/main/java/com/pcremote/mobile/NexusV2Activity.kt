@@ -63,10 +63,11 @@ private data class V2Nav(val page: Int, val label: String, val icon: ImageVector
 private val v2Primary = listOf(
     V2Nav(0,"Início",Icons.Default.Home),
     V2Nav(1,"Apps",Icons.Default.Apps),
-    V2Nav(5,"Mouse",Icons.Default.Mouse),
+    V2Nav(12,"Atalhos",Icons.Default.Bolt),
     V2Nav(2,"Controle",Icons.Default.SportsEsports)
 )
 private val v2Extra = listOf(
+    V2Nav(5,"Mouse",Icons.Default.Mouse),
     V2Nav(3,"Arquivos",Icons.Default.Folder),
     V2Nav(4,"Tela",Icons.Default.DesktopWindows),
     V2Nav(6,"Teclado",Icons.Default.Keyboard),
@@ -177,9 +178,7 @@ private fun NexusV2App() {
                 }
             }
         }
-        if (!NexusFullscreen.active) {
-            NexusFlowEdge { page = it }
-        }
+        // Edge overlay removed: Atalhos is a normal center tab (page 12).
     }
 }
 
@@ -198,6 +197,7 @@ private fun V2Page(page:Int,go:(Int)->Unit){
         9->NexusFlowScreen()
         10->EntertainmentHub(games=false)
         11->EntertainmentHub(games=true)
+        12->V2Shortcuts(go)
         else->V2Home(go)
     }
 }
@@ -225,7 +225,7 @@ private fun V2BottomNav(selected:Int,setPage:(Int)->Unit){
         Row(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=5.dp)){
             v2Primary.forEach{item->V2NavItem(item,selected==item.page,Modifier.weight(1f)){setPage(item.page)}}
             Box(Modifier.weight(1f)){
-                V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(3,4,6,7,8,9,10,11),Modifier.fillMaxWidth()){more=true}
+                V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(3,4,5,6,7,8,9,10,11),Modifier.fillMaxWidth()){more=true}
                 DropdownMenu(expanded=more,onDismissRequest={more=false},containerColor=NexusUi.PanelRaised,shape=RoundedCornerShape(NexusUi.cardRadius.dp)){
                     v2Extra.forEach{item->DropdownMenuItem(text={Text(item.label,color=NexusUi.Text)},leadingIcon={Icon(item.icon,null,tint=if(selected==item.page)NexusUi.Accent else NexusUi.Muted)},onClick={more=false;setPage(item.page)})}
                 }
@@ -240,6 +240,52 @@ private fun V2NavItem(item:V2Nav,active:Boolean,modifier:Modifier,onClick:()->Un
     Column(modifier.height(58.dp).clickable(onClick=onClick),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
         Box(Modifier.size(32.dp).background(if(active)NexusUi.Accent.copy(alpha=.14f) else Color.Transparent,RoundedCornerShape(NexusUi.cardRadius.dp)).padding((1f-scale).dp),contentAlignment=Alignment.Center){Icon(item.icon,item.label,tint=if(active)NexusUi.Accent else NexusUi.Muted,modifier=Modifier.size(20.dp))}
         Spacer(Modifier.height(2.dp));Text(item.label,color=if(active)NexusUi.Text else NexusUi.Muted,fontSize=8.sp,fontWeight=if(active)FontWeight.Bold else FontWeight.Medium)
+    }
+}
+
+
+@Composable
+private fun V2Shortcuts(go:(Int)->Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val actions = listOf(
+        V2Action("Mouse",Icons.Default.Mouse,5,NexusUi.Accent),
+        V2Action("Teclado",Icons.Default.Keyboard,6,NexusUi.Violet),
+        V2Action("Tela",Icons.Default.DesktopWindows,4,NexusUi.AccentStrong),
+        V2Action("Arquivos",Icons.Default.Folder,3,NexusUi.Accent),
+        V2Action("Jogos",Icons.Default.SportsEsports,11,NexusUi.Violet),
+        V2Action("Cinema",Icons.Default.Movie,10,NexusUi.AccentStrong),
+        V2Action("Mídia",Icons.Default.MusicNote,8,NexusUi.Accent),
+        V2Action("Apps",Icons.Default.Apps,1,NexusUi.Violet),
+        V2Action("NEXUS Flow",Icons.Default.AutoAwesome,9,NexusUi.AccentStrong)
+    )
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom=16.dp),
+        verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Text("Atalhos",color=NexusUi.Text,fontWeight=FontWeight.Black,
+             style=MaterialTheme.typography.headlineSmall)
+        Text("Acesso rápido em uma aba fixa, sem a barra Edge.",
+             color=NexusUi.Muted,style=MaterialTheme.typography.bodySmall)
+        actions.chunked(3).forEach { group ->
+            Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                group.forEach { item ->
+                    V2Tile(item.title,item.icon,item.accent,Modifier.weight(1f)){
+                        NexusEffects.play(ctx,NexusEffect.TAP);go(item.page)
+                    }
+                }
+            }
+        }
+        Text("Comandos rápidos",color=NexusUi.Text,fontWeight=FontWeight.Bold)
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            V2MediaButton(Icons.Default.VolumeOff,Modifier.weight(1f)) {
+                scope.launch(Dispatchers.IO){Api.post("/key","VOLUME_MUTE")}
+            }
+            V2MediaButton(Icons.Default.Screenshot,Modifier.weight(1f)) {
+                scope.launch(Dispatchers.IO){Api.post("/key","PRINTSCREEN")}
+            }
+            V2MediaButton(Icons.Default.SwapHoriz,Modifier.weight(1f)) {
+                scope.launch(Dispatchers.IO){Api.post("/hotkey","ALT_TAB")}
+            }
+        }
     }
 }
 
