@@ -28,7 +28,7 @@ jobs:
           python -m pip install --disable-pip-version-check --prefer-binary pyinstaller
           python -c "import pystray, PIL, tkinterdnd2, mss; print('Runtime dependencies OK')"
       - name: Validate Python sources
-        run: python -m py_compile pc_remote_server.py drop_edge.py companion_v2.py entertainment_hub.py
+        run: python -m py_compile pc_remote_server.py drop_edge.py companion_v2.py entertainment_hub.py steamrip_catalog.py
       - name: Test HTTP safety and file streaming
         run: python -m unittest discover -s tests -v
       - name: Validate tray menu
