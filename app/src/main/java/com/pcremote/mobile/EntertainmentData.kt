@@ -152,6 +152,7 @@ internal object HubCatalog {
         } finally { connection.disconnect() }
     }
     fun search(kind: String, term: String): List<HubItem> {
+        if (kind == "movie" || kind == "series") return searchMedia(kind, term)
         require(term.trim().length >= 2) { "Digite pelo menos 2 letras" }
         val q = encode(term.trim().take(90))
         return when (kind) {
@@ -215,15 +216,126 @@ internal object HubCatalog {
                         .replace(Regex("\\s+Free Download.*", RegexOption.IGNORE_CASE), "")
                         .trim().take(120)
                     if (title.isBlank()) return@mapNotNull null
-                    val image = a.selectFirst("img")?.absUrl("src").orEmpty()
+                    val img = a.selectFirst("img")
+                    val image = listOf("data-src", "data-lazy-src", "data-original", "src")
+                        .map { attribute -> img?.absUrl(attribute).orEmpty() }
+                        .firstOrNull { it.startsWith("https://") &&
+                            !it.contains("placeholder", ignoreCase = true) }.orEmpty()
                     HubItem(safeUrl, title, "SteamRIP · página externa",
                         "Baixar e instalar por conta própria; o NEXUS não verifica executáveis.",
                         image, safeUrl, "steamrip")
-                }.take(30)
+                }.take(30).let { entries ->
+                    // Image fallback from the public, official Steam search catalog.
+                    // Never misrepresent this as a SteamRIP-hosted image.
+                    val fallback = runCatching {
+                        val steam = jsonGet(
+                            "https://store.steampowered.com/api/storesearch/" +
+                                "?cc=BR&l=portuguese&term=$q")
+                        val items = steam.optJSONArray("items") ?: JSONArray()
+                        (0 until items.length()).mapNotNull { index ->
+                            val candidate = items.optJSONObject(index) ?: return@mapNotNull null
+                            val name = candidate.optString("name")
+                            val cover = candidate.optString("tiny_image")
+                            if (name.isBlank() || !cover.startsWith("https://")) null
+                            else normalizedTitle(name) to cover
+                        }.toMap()
+                    }.getOrDefault(emptyMap())
+                    entries.map { item ->
+                        if (item.image.isBlank())
+                            item.copy(image = fallback[normalizedTitle(item.title)].orEmpty())
+                        else item
+                    }
+                }
             }
             else -> emptyList()
         }
     }
+
+    private fun normalizedTitle(value: String): String =
+        java.text.Normalizer.normalize(value.lowercase(java.util.Locale.ROOT),
+            java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .replace(Regex("[^a-z0-9 ]"), " ")
+            .replace(Regex("\\s+"), " ").trim()
+
+    private fun relevance(item: HubItem, query: String): Int {
+        val title = normalizedTitle(item.title)
+        val wanted = normalizedTitle(query)
+        return when {
+            title == wanted -> 120
+            title.startsWith(wanted) -> 100
+            title.contains(wanted) -> 80
+            wanted.split(" ").filter { it.length >= 2 }.all { title.contains(it) } -> 60
+            else -> 0
+        }
+    }
+
+    /** Movie/series discovery independent of the Windows PC.
+     * Search both a metadata source and an additional archive repository.
+     * Archive results are listings, NOT a claim of public domain or downloadability.
+     */
+    private fun searchMedia(kind: String, term: String): List<HubItem> {
+        val q = encode(term.trim().take(90))
+        val primary: List<HubItem> = runCatching {
+            if (kind == "movie") {
+                val json = jsonGet(
+                    "https://itunes.apple.com/search?media=movie&entity=movie" +
+                        "&country=BR&lang=pt_br&limit=40&term=$q")
+                val data = json.optJSONArray("results") ?: JSONArray()
+                (0 until data.length()).mapNotNull { i ->
+                    val o = data.optJSONObject(i) ?: return@mapNotNull null
+                    if (o.optString("kind") != "feature-movie") return@mapNotNull null
+                    HubItem(o.optString("trackId"), o.optString("trackName"),
+                        o.optString("releaseDate").take(4) + " · Catálogo Apple",
+                        (o.optString("longDescription").ifBlank {
+                            o.optString("shortDescription")
+                        }).take(450),
+                        o.optString("artworkUrl100").replace("100x100bb", "600x600bb"),
+                        o.optString("trackViewUrl"), "movie")
+                }
+            } else {
+                val list = JSONArray(getText("https://api.tvmaze.com/search/shows?q=$q"))
+                (0 until minOf(40, list.length())).mapNotNull { i ->
+                    val o = list.optJSONObject(i)?.optJSONObject("show") ?: return@mapNotNull null
+                    HubItem(o.optString("id"), o.optString("name"),
+                        o.optString("premiered").take(4) + " · Catálogo TVmaze",
+                        Jsoup.parse(o.optString("summary")).text().take(450),
+                        (o.optJSONObject("image")?.optString("original")
+                            ?: o.optJSONObject("image")?.optString("medium")).orEmpty(),
+                        o.optString("url"), "series")
+                }
+            }
+        }.getOrDefault(emptyList())
+        val archive: List<HubItem> = runCatching {
+            val keyword = term.trim().take(90)
+                .replace(Regex("[^\\p{L}\\p{N} ]"), " ").trim()
+            val archiveQuery = encode("title:($keyword) AND mediatype:movies")
+            val json = jsonGet("https://archive.org/advancedsearch.php?q=$archiveQuery" +
+                "&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=year" +
+                "&rows=15&page=1&output=json")
+            val docs = json.optJSONObject("response")?.optJSONArray("docs") ?: JSONArray()
+            (0 until docs.length()).mapNotNull { i ->
+                val o = docs.optJSONObject(i) ?: return@mapNotNull null
+                val identifier = o.optString("identifier")
+                val title = o.optString("title")
+                if (!identifier.matches(Regex("[A-Za-z0-9._-]{1,140}")) || title.isBlank())
+                    return@mapNotNull null
+                HubItem("archive:$identifier", title.take(130),
+                    o.optString("year") + " · Internet Archive",
+                    "Acervo externo: verifique licença, idioma e arquivos disponíveis.",
+                    "https://archive.org/services/img/$identifier",
+                    "https://archive.org/details/$identifier", kind)
+            }
+        }.getOrDefault(emptyList())
+        val all = primary + archive
+        val selected = all.filter { relevance(it, term) >= 60 }
+        val filtered = if (selected.isNotEmpty()) selected else all
+        return filtered.distinctBy { normalizedTitle(it.title) + ":" +
+            if (it.id.startsWith("archive:")) "archive" else "catalog" }
+            .sortedByDescending { relevance(it, term) }
+            .take(35)
+    }
+
     private fun getText(address: String): String {
         val c = URL(address).openConnection() as HttpURLConnection
         try {
