@@ -25,6 +25,9 @@ import steamrip_catalog
 
 STATE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "NEXUS PC Remote"
 STATE_DIR.mkdir(parents=True, exist_ok=True)
+RECEIPTS_FILE = STATE_DIR / "entertainment_receipts.json"
+_DISPATCH_LOCK = threading.RLock()
+
 KEY_FILE = STATE_DIR / "entertainment_key.txt"
 VIDEO_DIR = Path.home() / "Videos" / "NEXUS"
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)
@@ -339,3 +342,64 @@ def cancel_download(job_id):
             raise ValueError("Download já concluído ou inexistente")
         event.set()
     return {"ok": True}
+
+
+def _read_receipts():
+    try:
+        data = json.loads(RECEIPTS_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_receipts(data):
+    temp = RECEIPTS_FILE.with_suffix(".part")
+    try:
+        temp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        os.replace(temp, RECEIPTS_FILE)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def dispatch_task(task_id, action, payload):
+    """Execute a previously queued, explicit user command once per task ID.
+
+    The receipt is durable; Android retries after PC shutdown without
+    opening the same page or requesting the same Steam install repeatedly.
+    """
+    if not isinstance(task_id, str) or not re.fullmatch(
+            r"[0-9a-fA-F]{8}-[0-9a-fA-F-]{20,40}", task_id):
+        raise ValueError("Identificador da fila inválido")
+    if not isinstance(payload, dict):
+        raise ValueError("Dados da tarefa inválidos")
+    allowed = {
+        "steam_install", "archive_download", "steamrip_open",
+        "catalog_open", "game_launch", "video_play"
+    }
+    if action not in allowed:
+        raise ValueError("Ação da fila não permitida")
+
+    with _DISPATCH_LOCK:
+        receipts = _read_receipts()
+        if task_id in receipts:
+            return {"ok": True, "duplicate": True, **receipts[task_id]}
+        if action == "steam_install":
+            result = steam_action(payload.get("id", ""), "install")
+        elif action == "archive_download":
+            result = start_download(payload.get("url", ""))
+        elif action == "steamrip_open":
+            result = steamrip_catalog.open_in_browser(
+                url=str(payload.get("url", "")))
+        elif action == "catalog_open":
+            result = open_catalog_link(payload.get("url", ""))
+        elif action == "game_launch":
+            result = launch_game(str(payload.get("id", "")))
+        else:
+            result = play_video(str(payload.get("id", "")))
+        receipt = {"message": str(result.get("message", "Comando aceito pelo PC"))[:180]}
+        if "id" in result:
+            receipt["pc_job_id"] = result["id"]
+        receipts[task_id] = receipt
+        # Keep receipts bounded, but retain sufficiently many for offline retries.
+        _save_receipts(dict(list(receipts.items())[-1500:]))
+        return {"ok": True, "duplicate": False, **receipt}
