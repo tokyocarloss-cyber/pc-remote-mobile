@@ -361,6 +361,46 @@ def _save_receipts(data):
         temp.unlink(missing_ok=True)
 
 
+# Same fixed provider IDs as CinemaDirectories in the Android client.
+_CINEMA_SOURCE_URLS = {
+    "justwatch": "https://br.justwatch.com/br",
+    "pluto": "https://pluto.tv/br/on-demand",
+    "apple": "https://tv.apple.com/br",
+    "tvmaze": "https://www.tvmaze.com",
+    "megathread": "https://pirataria.link/",
+    "hattered": "https://mefrraz.github.io/hattered/index.html",
+}
+_CINEMA_SEARCH_SOURCES = {"archive", "torrentdosfilmes", "btdig", "ext"}
+
+
+def cinema_source_url(source_id, query=""):
+    if not isinstance(source_id, str):
+        raise ValueError("Fonte inválida")
+    if not isinstance(query, str) or len(query) > 180:
+        raise ValueError("Busca inválida")
+    if source_id in _CINEMA_SOURCE_URLS:
+        return _CINEMA_SOURCE_URLS[source_id]
+    term = query.strip()
+    q = urllib.parse.quote_plus(term[:120])
+    if source_id == "archive":
+        return "https://archive.org/search?query=" + q if term else (
+            "https://archive.org/details/movies")
+    if source_id == "torrentdosfilmes":
+        return ("https://www.google.com/search?q=" +
+                urllib.parse.quote_plus("Torrent dos Filmes " + term[:90]))
+    if source_id == "btdig":
+        return "https://btdig.com/search?q=" + q + "&p=0" if term else "https://btdig.com"
+    if source_id == "ext":
+        return "https://ext.to/browse/?q=" + q if term else "https://ext.to"
+    raise ValueError("Fonte externa não cadastrada")
+
+
+def open_cinema_source(source_id, query=""):
+    url = cinema_source_url(source_id, query)
+    os.startfile(url)
+    return {"ok": True, "message": "Fonte aberta no navegador do PC"}
+
+
 def dispatch_task(task_id, action, payload):
     """Execute a previously queued, explicit user command once per task ID.
 
@@ -374,7 +414,7 @@ def dispatch_task(task_id, action, payload):
         raise ValueError("Dados da tarefa inválidos")
     allowed = {
         "steam_install", "archive_download", "steamrip_open",
-        "catalog_open", "game_launch", "video_play"
+        "catalog_open", "source_open", "game_launch", "video_play"
     }
     if action not in allowed:
         raise ValueError("Ação da fila não permitida")
@@ -392,6 +432,9 @@ def dispatch_task(task_id, action, payload):
                 url=str(payload.get("url", "")))
         elif action == "catalog_open":
             result = open_catalog_link(payload.get("url", ""))
+        elif action == "source_open":
+            result = open_cinema_source(
+                payload.get("source", ""), payload.get("query", ""))
         elif action == "game_launch":
             result = launch_game(str(payload.get("id", "")))
         else:
