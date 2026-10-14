@@ -7,6 +7,8 @@ Only archive.org /download/ video URLs can enter the download queue.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
+import socket
 import hmac
 import html
 import json
@@ -31,6 +33,8 @@ _DISPATCH_LOCK = threading.RLock()
 KEY_FILE = STATE_DIR / "entertainment_key.txt"
 VIDEO_DIR = Path.home() / "Videos" / "NEXUS"
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+WEB_DIR = Path.home() / "Downloads" / "NEXUS"
+WEB_DIR.mkdir(parents=True, exist_ok=True)
 SUFFIXES = {".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v"}
 MAX_BYTES = 10 * 1024 ** 3
 GAME_STORES = {"Steam", "Epic", "Xbox", "EA", "Ubisoft", "Battle.net", "GOG", "Alll"}
@@ -344,6 +348,124 @@ def cancel_download(job_id):
     return {"ok": True}
 
 
+
+# Remote browser downloads are files only: no execution, extraction or shell commands.
+# A phone download click queues a URL here; the PC fetches it directly when online.
+WEB_SUFFIXES = SUFFIXES | {".zip", ".rar", ".7z", ".tar", ".gz", ".iso", ".pdf", ".mp3", ".flac", ".ogg"}
+WEB_MAX_BYTES = 60 * 1024 ** 3
+
+
+def _public_https_url(raw):
+    url = urllib.parse.urlsplit(str(raw or "").strip())
+    host = (url.hostname or "").lower().rstrip(".")
+    if (url.scheme != "https" or url.username or url.password or
+            url.port not in (None, 443) or not host or "." not in host or
+            len(str(raw)) > 2048 or host.endswith((".local", ".localhost", ".internal", ".test"))):
+        raise ValueError("O download exige URL HTTPS pública sem credenciais")
+    # Prevent a phone-controlled URL from accessing LAN, cloud metadata, or loopback.
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("Endereços IP diretos não são aceitos para downloads")
+    try:
+        addresses = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise ValueError("O domínio do download não pôde ser encontrado") from exc
+    if not addresses or any(
+        not ipaddress.ip_address(entry[4][0].split("%")[0]).is_global
+        for entry in addresses
+    ):
+        raise ValueError("O destino do download não é público")
+    return urllib.parse.urlunsplit(url)
+
+
+class _PublicDownloadRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _public_https_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _safe_download_name(response, url):
+    # Prefer Content-Disposition filename when the host serves /download/<token>.
+    header = response.headers.get("Content-Disposition", "")
+    match = re.search(r'filename\s*=\s*"?([^";\r\n]+)', header, re.IGNORECASE)
+    raw = match.group(1) if match else urllib.parse.unquote(urllib.parse.urlsplit(url).path).rsplit("/", 1)[-1]
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw).strip(" .")[:140]
+    if not name or Path(name).suffix.lower() not in WEB_SUFFIXES:
+        raise ValueError("Formato não suportado: use link direto para vídeo ou arquivo compactado")
+    return name
+
+
+def _web_download(job_id, url):
+    part = WEB_DIR / (job_id + ".nexus-part")
+    with _LOCK:
+        cancelled = _CANCELLATIONS[job_id]
+    try:
+        opener = urllib.request.build_opener(_PublicDownloadRedirects())
+        _job_update(job_id, state="connecting")
+        # Never forward mobile WebView cookies or credentials to the PC.
+        req = urllib.request.Request(url, headers={"User-Agent": "NEXUS-Download/1.0"})
+        with opener.open(req, timeout=35) as response:
+            _public_https_url(response.geturl())
+            content_type = response.headers.get("Content-Type", "").lower()
+            if "text/html" in content_type or "application/xhtml+xml" in content_type:
+                raise ValueError("O site entregou uma página, não um arquivo direto")
+            total = int(response.headers.get("Content-Length", "0") or "0")
+            if total > WEB_MAX_BYTES:
+                raise ValueError("Arquivo maior que 60 GB")
+            name = _safe_download_name(response, response.geturl())
+            target = WEB_DIR / name
+            idx = 1
+            while target.exists():
+                target = WEB_DIR / f"{Path(name).stem}_{idx}{Path(name).suffix}"
+                idx += 1
+            downloaded = 0
+            _job_update(job_id, state="downloading", title=target.name, total=total)
+            with part.open("wb") as out:
+                while True:
+                    if cancelled.is_set():
+                        raise InterruptedError("Cancelado")
+                    chunk = response.read(256 * 1024)
+                    if not chunk:
+                        break
+                    downloaded += len(chunk)
+                    if downloaded > WEB_MAX_BYTES:
+                        raise ValueError("Arquivo maior que 60 GB")
+                    out.write(chunk)
+                    _job_update(job_id, downloaded=downloaded)
+            if cancelled.is_set():
+                raise InterruptedError("Cancelado")
+            if downloaded == 0 or (total > 0 and downloaded != total):
+                raise ValueError("O download terminou incompleto")
+            os.replace(part, target)
+            _job_update(job_id, state="finished", downloaded=downloaded,
+                        total=downloaded, title=target.name)
+    except InterruptedError:
+        _job_update(job_id, state="cancelled")
+    except Exception as exc:
+        _job_update(job_id, state="error", error=str(exc)[:180])
+    finally:
+        part.unlink(missing_ok=True)
+        with _LOCK:
+            _CANCELLATIONS.pop(job_id, None)
+
+
+def start_web_download(value):
+    url = _public_https_url(value)
+    with _LOCK:
+        if sum(j.get("state") in ("connecting", "downloading") for j in _JOBS.values()) >= 2:
+            raise ValueError("Máximo de dois downloads simultâneos")
+        job_id = uuid.uuid4().hex[:14]
+        _JOBS[job_id] = {"id": job_id, "title": "Arquivo do navegador NEXUS",
+                         "state": "queued", "downloaded": 0, "total": 0, "error": ""}
+        _CANCELLATIONS[job_id] = threading.Event()
+    threading.Thread(target=_web_download, args=(job_id, url),
+                     daemon=True, name="NexusBrowserDownload").start()
+    return {"ok": True, "id": job_id}
+
+
 def _read_receipts():
     try:
         data = json.loads(RECEIPTS_FILE.read_text(encoding="utf-8"))
@@ -413,7 +535,7 @@ def dispatch_task(task_id, action, payload):
     if not isinstance(payload, dict):
         raise ValueError("Dados da tarefa inválidos")
     allowed = {
-        "steam_install", "archive_download", "steamrip_open",
+        "steam_install", "archive_download", "web_download", "steamrip_open",
         "catalog_open", "source_open", "game_launch", "video_play"
     }
     if action not in allowed:
@@ -427,6 +549,8 @@ def dispatch_task(task_id, action, payload):
             result = steam_action(payload.get("id", ""), "install")
         elif action == "archive_download":
             result = start_download(payload.get("url", ""))
+        elif action == "web_download":
+            result = start_web_download(payload.get("url", ""))
         elif action == "steamrip_open":
             result = steamrip_catalog.open_in_browser(
                 url=str(payload.get("url", "")))
