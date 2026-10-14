@@ -119,16 +119,20 @@ fun EntertainmentHub(games: Boolean) {
         notice = ""
     }
 
-    val visible = when (mode) {
+    val visible = remember(mode, games, revision, results) {
+        when (mode) {
         "favorites" -> HubStore.favorites(ctx, games)
         "installed" -> HubStore.localItems(ctx, "game")
         "video" -> HubStore.localItems(ctx, "video")
         else -> results
+        }
     }
-    val tasks = if (mode == "queue") HubStore.tasks(ctx).filter { task ->
+    val tasks = remember(mode, games, revision) {
+        if (mode == "queue") HubStore.tasks(ctx).filter { task ->
         if (games) task.action in setOf("steam_install", "steamrip_open", "game_launch")
         else task.action in setOf("archive_download", "catalog_open", "video_play")
     } else emptyList()
+    }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically,
@@ -252,7 +256,7 @@ fun EntertainmentHub(games: Boolean) {
                 "tenta enviar a fila quando reencontrar o computador.",
                 color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
             if (tasks.isEmpty()) Text("Nenhuma tarefa nesta fila.", color = NexusUi.Muted)
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(tasks, key = { it.id }) { task ->
                     Surface(color = NexusUi.Panel, shape = RoundedCornerShape(12.dp)) {
                         Row(Modifier.fillMaxWidth().padding(10.dp),
@@ -290,7 +294,7 @@ fun EntertainmentHub(games: Boolean) {
                     else -> "Pesquise algum título para começar."
                 }, color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
             }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(visible, key = { it.kind + it.id }) { item ->
                     Surface(color = NexusUi.Panel, shape = RoundedCornerShape(14.dp),
                         border = BorderStroke(1.dp, NexusUi.Border)) {
