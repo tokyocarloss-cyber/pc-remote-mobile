@@ -89,7 +89,7 @@ private object HubApi {
         val path = when (kind) {
             "installed" -> "/entertainment/library?type=game"
             "video" -> "/entertainment/library?type=video"
-            "game", "movie", "series" ->
+            "game", "steamrip", "movie", "series" ->
                 "/entertainment/search?type=$kind&q=${encode(query)}"
             else -> return emptyList()
         }
@@ -229,7 +229,7 @@ fun EntertainmentHub(games: Boolean) {
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                val sections = if (games) listOf("game" to "Pesquisar", "installed" to "Instalados")
+                val sections = if (games) listOf("game" to "Steam", "steamrip" to "SteamRIP", "installed" to "Instalados")
                                else listOf("movie" to "Filmes", "series" to "Séries",
                                            "video" to "Meus vídeos", "downloads" to "Downloads")
                 sections.forEach { (id, label) ->
@@ -241,7 +241,7 @@ fun EntertainmentHub(games: Boolean) {
                 }
             }
 
-            if (mode in setOf("movie", "series", "game")) {
+            if (mode in setOf("movie", "series", "game", "steamrip")) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -252,6 +252,26 @@ fun EntertainmentHub(games: Boolean) {
                     Button(enabled = !working && term.trim().length >= 2,
                         onClick = { refresh(mode) }) {
                         Icon(Icons.Default.Search, contentDescription = "Buscar")
+                    }
+                }
+                if (mode == "steamrip") {
+                    Text(
+                        "Fonte externa: os links e arquivos não são verificados pelo NEXUS. " +
+                            "Downloads, extração e execução automáticos estão desativados.",
+                        color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedButton(
+                        enabled = !working && term.trim().length >= 2,
+                        onClick = {
+                            command(
+                                "/entertainment/steamrip",
+                                JSONObject().put("query", term.trim())
+                            )
+                        }
+                    ) {
+                        Icon(Icons.Default.OpenInBrowser, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Abrir pesquisa no navegador do PC")
                     }
                 }
             }
@@ -356,6 +376,17 @@ fun EntertainmentHub(games: Boolean) {
                                                         JSONObject().put("id", item.id).put("action", "install"))
                                                 }) { Text("Instalar") }
                                             }
+                                        }
+                                        "steamrip" -> {
+                                            Button(
+                                                enabled = !working,
+                                                onClick = {
+                                                    command(
+                                                        "/entertainment/steamrip",
+                                                        JSONObject().put("url", item.url)
+                                                    )
+                                                }
+                                            ) { Text("Abrir página no PC") }
                                         }
                                         "installed-game" -> {
                                             Button(enabled = !working, onClick = {
