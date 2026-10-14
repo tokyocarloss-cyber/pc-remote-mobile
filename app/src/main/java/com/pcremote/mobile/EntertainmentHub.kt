@@ -4,6 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -43,14 +49,13 @@ fun EntertainmentHub(games: Boolean) {
     var revision by remember { mutableIntStateOf(0) }
     var pcDownloads by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var pairingPanel by remember { mutableStateOf(false) }
+    var sourceFor by remember { mutableStateOf<HubItem?>(null) }
     var pairingCode by remember { mutableStateOf(HubStore.key(ctx)) }
     val connected = Api.connected && HubStore.key(ctx).isNotBlank()
     val tabs = if (games)
         listOf("game" to "Steam", "steamrip" to "SteamRIP", "installed" to "No meu PC",
             "favorites" to "Favoritos", "queue" to "Fila")
-    else listOf("movie" to "Filmes", "series" to "Séries", "sources" to "Fontes",
-        "video" to "Meus vídeos",
-        "favorites" to "Favoritos", "download" to "Download", "queue" to "Fila")
+    else listOf("movie" to "Filmes", "series" to "Séries")
 
     fun openUrl(url: String) {
         try {
@@ -162,33 +167,64 @@ fun EntertainmentHub(games: Boolean) {
                 contentDescription = null, tint = NexusUi.Accent)
             Text(if (games) "NEXUS Jogos" else "NEXUS Cinema",
                 color = NexusUi.Text, fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f))
+            IconButton(onClick = { mode = "favorites" }) {
+                Icon(Icons.Default.FavoriteBorder, contentDescription = "Favoritos", tint = NexusUi.Accent)
+            }
+            IconButton(onClick = { mode = "queue" }) {
+                Icon(Icons.Default.Download, contentDescription = "Downloads e fila", tint = NexusUi.Accent)
+            }
             IconButton(onClick = { pairingPanel = !pairingPanel }) {
                 Icon(Icons.Default.Computer, contentDescription = "Configurar PC",
                     tint = if (connected) NexusUi.Success else NexusUi.Muted)
             }
         }
-        Text(
-            if (games) "Explore lojas no celular, guarde jogos e prepare instalações."
-            else "Pesquise no celular, salve favoritos e organize o que quer assistir.",
-            color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall
-        )
-        Text(
-            if (connected) "PC conectado • tarefas sincronizadas automaticamente"
-            else "Modo independente • PC desligado ou não pareado",
-            color = if (connected) NexusUi.Success else NexusUi.Accent,
-            style = MaterialTheme.typography.labelMedium
-        )
-
-        OutlinedButton(onClick = {
-            openUrl(if (games) "https://steamrip.com/" else "https://www.google.com/")
-        }) {
-            Icon(Icons.Default.Language, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text("Navegador NEXUS · baixar no PC")
+        // Keep the search above the source/category chips, in a compact marketplace bar.
+        if (mode in setOf("game", "steamrip", "movie", "series")) {
+            Row(Modifier.fillMaxWidth().height(50.dp)
+                .background(NexusUi.PanelRaised, RoundedCornerShape(14.dp))
+                .padding(start = 12.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Search, null, tint = NexusUi.Muted,
+                    modifier = Modifier.size(20.dp))
+                BasicTextField(value = query, onValueChange = { query = it },
+                    singleLine = true, cursorBrush = SolidColor(NexusUi.Accent),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = NexusUi.Text),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { search() }),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        Box {
+                            if (query.isEmpty()) Text("Buscar " +
+                                if (games) "jogos..." else "filmes e séries...",
+                                color = NexusUi.Muted,
+                                style = MaterialTheme.typography.bodyMedium)
+                            inner()
+                        }
+                    })
+                IconButton(onClick = { search() },
+                    enabled = !busy && query.trim().length >= 2,
+                    modifier = Modifier.size(42.dp)
+                        .background(NexusUi.AccentStrong, RoundedCornerShape(12.dp))) {
+                    Icon(Icons.Default.Search, "Pesquisar", tint = androidx.compose.ui.graphics.Color.White)
+                }
+            }
         }
-
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            Text(if (Api.connected) "PC conectado"
+                else "Biblioteca disponível sem o PC",
+                color = if (Api.connected) NexusUi.Success else NexusUi.Muted,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.weight(1f))
+            TextButton(onClick = { openUrl(if (games) "https://steamrip.com/"
+                else "https://www.google.com/") }) {
+                Icon(Icons.Default.Language, null, modifier=Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Navegador", style = MaterialTheme.typography.labelMedium)
+            }
+        }
         if (pairingPanel) {
             Surface(color = NexusUi.Panel, shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, NexusUi.Border)) {
@@ -227,29 +263,6 @@ fun EntertainmentHub(games: Boolean) {
             tabs.forEach { (id, label) ->
                 FilterChip(selected = mode == id, onClick = { mode = id },
                     label = { Text(label) })
-            }
-        }
-
-        if (mode in setOf("game", "steamrip", "movie", "series")) {
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedTextField(value = query, onValueChange = { query = it },
-                    label = { Text(if (games) "Pesquisar jogo" else "Pesquisar título") },
-                    singleLine = true, modifier = Modifier.weight(1f))
-                Button(onClick = { search() },
-                    enabled = !busy && query.trim().length >= 2) {
-                    Icon(Icons.Default.Search, contentDescription = "Pesquisar")
-                }
-            }
-            if (mode == "steamrip") {
-                Text("Fonte externa. Os links podem mudar; o NEXUS não instala nem executa cracks.",
-                    color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = { openUrl(HubCatalog.steamRipSearchUrl(query)) },
-                    enabled = query.trim().length >= 2) {
-                    Icon(Icons.Default.OpenInBrowser, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Pesquisar SteamRIP no NEXUS")
-                }
             }
         }
 
@@ -387,92 +400,64 @@ fun EntertainmentHub(games: Boolean) {
                 }, color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
             }
             LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
                 items(visible, key = { it.kind + it.id }) { item ->
-                    Surface(color = NexusUi.Panel, shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, NexusUi.Border)) {
-                        Row(Modifier.fillMaxWidth().padding(10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            if (item.image.startsWith("https://")) {
-                                AsyncImage(model = item.image, contentDescription = item.title,
-                                    modifier = Modifier.size(width = 74.dp, height = 94.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
-                                    contentScale = ContentScale.Crop)
-                            } else {
-                                Icon(if (games) Icons.Default.SportsEsports else Icons.Default.Movie,
-                                    null, tint = NexusUi.Accent, modifier = Modifier.size(42.dp))
+                    EntertainmentResultCard(item = item, games = games,
+                        isFavorite = HubStore.isFavorite(ctx, item),
+                        onFavorite = {
+                            HubStore.toggleFavorite(ctx, item)
+                            revision++
+                        },
+                        onOpen = {
+                            if (item.url.isNotBlank()) openUrl(item.url)
+                            else notice = "Este item está na biblioteca do PC."
+                        },
+                        onSources = { sourceFor = item },
+                        onAction = {
+                            when (item.kind) {
+                                "game" -> enqueue(item, "steam_install",
+                                    JSONObject().put("id", item.id))
+                                "steamrip" -> openUrl(item.url)
+                                "movie", "series" -> sourceFor = item
+                                "installed-game" -> enqueue(item, "game_launch",
+                                    JSONObject().put("id", item.id))
+                                "local-video" -> enqueue(item, "video_play",
+                                    JSONObject().put("id", item.id))
+                                else -> if (item.url.isNotBlank()) openUrl(item.url)
                             }
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Row(verticalAlignment = Alignment.Top) {
-                                    Text(item.title, color = NexusUi.Text, fontWeight = FontWeight.Bold,
-                                        maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f))
-                                    IconButton(onClick = {
-                                        HubStore.toggleFavorite(ctx, item)
-                                        revision++
-                                    }, modifier = Modifier.size(34.dp)) {
-                                        Icon(if (HubStore.isFavorite(ctx, item)) Icons.Default.Favorite
-                                            else Icons.Default.FavoriteBorder,
-                                            contentDescription = "Salvar favorito", tint = NexusUi.Accent,
-                                            modifier = Modifier.size(21.dp))
-                                    }
-                                }
-                                Text(item.subtitle, color = NexusUi.Muted,
-                                    style = MaterialTheme.typography.labelSmall)
-                                if (item.description.isNotBlank()) {
-                                    Text(item.description, color = NexusUi.Muted,
-                                        style = MaterialTheme.typography.bodySmall, maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis)
-                                }
-                                when (item.kind) {
-                                    "game" -> {
-                                        TextButton(onClick = { openUrl(item.url) }) {
-                                            Text("Explorar Steam no NEXUS")
-                                        }
-                                        Button(onClick = {
-                                            enqueue(item, "steam_install",
-                                                JSONObject().put("id", item.id))
-                                        }) { Text("Instalar quando PC conectar") }
-                                    }
-                                    "steamrip" -> {
-                                        TextButton(onClick = { openUrl(item.url) }) {
-                                            Text("Abrir SteamRIP no NEXUS")
-                                        }
-                                        OutlinedButton(onClick = {
-                                            enqueue(item, "steamrip_open",
-                                                JSONObject().put("url", item.url))
-                                        }) { Text("Abrir no PC depois") }
-                                    }
-                                    "movie", "series" -> {
-                                        TextButton(onClick = { openUrl(item.url) }) {
-                                            Text("Ver detalhes no NEXUS")
-                                        }
-                                        OutlinedButton(onClick = {
-                                            enqueue(item, "catalog_open",
-                                                JSONObject().put("url", item.url))
-                                        }) { Text("Abrir no PC depois") }
-                                    }
-                                    "cinema-source" -> {
-                                        TextButton(onClick = {
-                                            openUrl(CinemaDirectories.url(item.id, ""))
-                                        }) { Text("Abrir fonte no NEXUS") }
-                                        OutlinedButton(onClick = {
-                                            enqueue(item, "source_open",
-                                                JSONObject().put("source", item.id)
-                                                    .put("query", ""))
-                                        }) { Text("Abrir no PC depois") }
-                                    }
-                                    "installed-game" -> Button(onClick = {
-                                        enqueue(item, "game_launch", JSONObject().put("id", item.id))
-                                    }) { Text("Jogar no PC") }
-                                    "local-video" -> Button(onClick = {
-                                        enqueue(item, "video_play", JSONObject().put("id", item.id))
-                                    }) { Text("Reproduzir no PC") }
+                        })
+                }
+            }
+        }
+        val selectedMedia = sourceFor
+        if (selectedMedia != null) {
+            AlertDialog(
+                onDismissRequest = { sourceFor = null },
+                title = { Text("Pesquisar: "+selectedMedia.title) },
+                text = {
+                    Column(verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                        Text("Fontes reunidas neste resultado. A disponibilidade dos arquivos, " +
+                            "o idioma e a licença precisam ser conferidos no site.",
+                            style=MaterialTheme.typography.bodySmall,
+                            color=NexusUi.Muted)
+                        LazyColumn(Modifier.heightIn(max=340.dp)) {
+                            items(CinemaDirectories.all, key={it.id}) { source ->
+                                TextButton(onClick = {
+                                    val address = CinemaDirectories.url(
+                                        source.id, selectedMedia.title)
+                                    sourceFor = null
+                                    openUrl(address)
+                                }, modifier=Modifier.fillMaxWidth()) {
+                                    Text(source.title, modifier=Modifier.weight(1f))
+                                    Icon(Icons.Default.OpenInBrowser, null,
+                                        modifier=Modifier.size(18.dp))
                                 }
                             }
                         }
                     }
-                }
-            }
+                },
+                confirmButton = { TextButton(onClick={sourceFor=null}) { Text("Fechar") } }
+            )
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (notice.isNotBlank()) {
