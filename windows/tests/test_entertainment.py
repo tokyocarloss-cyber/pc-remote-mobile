@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 import entertainment_hub as hub
+import steamrip_catalog as steamrip
 from companion_v2 import CompanionHandler
 
 
@@ -72,6 +73,59 @@ class HubTests(unittest.TestCase):
             startfile.assert_called_once_with(str(movie.resolve()))
         with self.assertRaises(ValueError):
             hub.play_video("arbitrary-path")
+
+
+class SteamRipTests(unittest.TestCase):
+    def test_search_html_parses_site_entries_without_executing_downloads(self):
+        fixture = """
+        <article><a href="https://steamrip.com/example-game-free-download/">
+        <img src="https://steamrip.com/wp-content/uploads/example.jpg" alt="Example Game">
+        Example Game Free Download</a></article>
+        <a href="https://steamrip.com/example-game-free-download/">duplicate</a>
+        <a href="https://steamrip.com.evil.test/bad-free-download/">Untrusted</a>
+        <a href="http://steamrip.com/plain-http-free-download/">HTTP</a>
+        """
+        with mock.patch.object(steamrip, "_get_html", return_value=fixture):
+            entries = steamrip.search("Example Game")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["kind"], "steamrip")
+        self.assertEqual(entries[0]["title"], "Example Game")
+        self.assertTrue(entries[0]["url"].startswith("https://steamrip.com/"))
+        self.assertNotIn("download_url", entries[0])
+
+    def test_rejects_non_site_and_unexpected_paths(self):
+        for url in (
+            "https://steamrip.com.evil.test/game-free-download/",
+            "https://evil.test/game-free-download/",
+            "http://steamrip.com/game-free-download/",
+            "https://steamrip.com/setup.exe",
+            "https://steamrip.com:8080/game-free-download/",
+            "https://username@steamrip.com/game-free-download/",
+        ):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                steamrip._allowed_url(url)
+
+    def test_browser_command_uses_only_safe_urls(self):
+        with mock.patch.object(steamrip.os, "startfile", create=True) as open_url:
+            steamrip.open_in_browser(query="Elden Ring")
+            open_url.assert_called_once_with("https://steamrip.com/?s=Elden+Ring")
+        with mock.patch.object(steamrip.os, "startfile", create=True) as open_url:
+            steamrip.open_in_browser(url="https://steamrip.com/example-free-download/")
+            open_url.assert_called_once_with("https://steamrip.com/example-free-download/")
+        with self.assertRaises(ValueError):
+            steamrip.open_in_browser(query="bad", url="https://steamrip.com/foo-free-download/")
+
+    def test_redirects_to_external_hosts_are_rejected(self):
+        handler = steamrip._SameOriginRedirects()
+        request = urllib.request.Request("https://steamrip.com/?s=example")
+        with self.assertRaises(ValueError):
+            handler.redirect_request(request, None, 302, "redirect", {},
+                                     "https://localhost/private")
+
+    def test_site_failure_is_reported_not_turned_into_fake_results(self):
+        with mock.patch.object(steamrip, "_get_html", side_effect=ValueError("Sem acesso")):
+            with self.assertRaises(ValueError):
+                steamrip.search("Exemplo")
 
 
 class ApiTests(unittest.TestCase):
