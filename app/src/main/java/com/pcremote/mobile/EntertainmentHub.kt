@@ -1,8 +1,9 @@
 package com.pcremote.mobile
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,380 +28,339 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
-
-private data class HubEntry(
-    val id: String,
-    val title: String,
-    val subtitle: String,
-    val description: String,
-    val image: String,
-    val url: String,
-    val kind: String
-) {
-    companion object {
-        fun parse(json: JSONObject) = HubEntry(
-            json.optString("id"), json.optString("title"),
-            json.optString("subtitle"), json.optString("description"),
-            json.optString("image"), json.optString("url"), json.optString("kind")
-        )
-    }
-}
-
-private object HubApi {
-    private fun encode(text: String): String = URLEncoder.encode(text, "UTF-8")
-
-    suspend fun request(context: Context, path: String, payload: JSONObject? = null): JSONObject =
-        withContext(Dispatchers.IO) {
-            val key = context.getSharedPreferences("nexus_entertainment", Context.MODE_PRIVATE)
-                .getString("key", "").orEmpty()
-            if (Api.host.isBlank()) throw IllegalStateException("PC não conectado")
-            val connection = URL("http://${Api.host}:8765$path").openConnection() as HttpURLConnection
-            try {
-                connection.connectTimeout = 2500
-                connection.readTimeout = 14500
-                connection.useCaches = false
-                connection.setRequestProperty("X-Nexus-Central-Key", key)
-                connection.setRequestProperty("Cache-Control", "no-cache")
-                if (payload != null) {
-                    val bytes = payload.toString().toByteArray(Charsets.UTF_8)
-                    connection.requestMethod = "POST"
-                    connection.doOutput = true
-                    connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    connection.setFixedLengthStreamingMode(bytes.size)
-                    connection.outputStream.use { it.write(bytes) }
-                }
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val result = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-                val json = JSONObject(if (result.isBlank()) "{}" else result)
-                if (code !in 200..299) {
-                    throw IllegalStateException(json.optString("error", "Erro HTTP $code"))
-                }
-                json
-            } finally {
-                connection.disconnect()
-            }
-        }
-
-    suspend fun list(context: Context, kind: String, query: String, games: Boolean): List<HubEntry> {
-        val path = when (kind) {
-            "installed" -> "/entertainment/library?type=game"
-            "video" -> "/entertainment/library?type=video"
-            "game", "steamrip", "movie", "series" ->
-                "/entertainment/search?type=$kind&q=${encode(query)}"
-            else -> return emptyList()
-        }
-        val json = request(context, path)
-        val array = json.optJSONArray("items") ?: return emptyList()
-        return (0 until array.length()).mapNotNull { index ->
-            array.optJSONObject(index)?.let(HubEntry::parse)
-        }
-    }
-}
 
 @Composable
 fun EntertainmentHub(games: Boolean) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val prefs = remember { ctx.getSharedPreferences("nexus_entertainment", Context.MODE_PRIVATE) }
-    var code by rememberSaveable { mutableStateOf(prefs.getString("key", "").orEmpty()) }
-    var paired by remember { mutableStateOf(false) }
-    var working by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf("") }
-    var term by rememberSaveable(games) { mutableStateOf("") }
-    var directLink by rememberSaveable { mutableStateOf("") }
-    var mode by remember(games) { mutableStateOf(if (games) "game" else "movie") }
-    var entries by remember { mutableStateOf<List<HubEntry>>(emptyList()) }
-    var jobs by remember { mutableStateOf<org.json.JSONArray?>(null) }
+    var mode by rememberSaveable(games) { mutableStateOf(if (games) "game" else "movie") }
+    var query by rememberSaveable(games) { mutableStateOf("") }
+    var videoUrl by rememberSaveable { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<HubItem>>(emptyList()) }
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf("") }
+    var revision by remember { mutableIntStateOf(0) }
+    var pairingPanel by remember { mutableStateOf(false) }
+    var pairingCode by remember { mutableStateOf(HubStore.key(ctx)) }
+    val connected = Api.connected && HubStore.key(ctx).isNotBlank()
+    val tabs = if (games)
+        listOf("game" to "Steam", "steamrip" to "SteamRIP", "installed" to "No meu PC",
+            "favorites" to "Favoritos", "queue" to "Fila")
+    else listOf("movie" to "Filmes", "series" to "Séries", "video" to "Meus vídeos",
+        "favorites" to "Favoritos", "download" to "Download", "queue" to "Fila")
 
-    fun command(path: String, payload: JSONObject, after: (() -> Unit)? = null) {
-        scope.launch {
-            working = true
-            try {
-                val res = HubApi.request(ctx, path, payload)
-                message = res.optString("message", "Comando enviado ao PC.")
-                after?.invoke()
-            } catch (e: Exception) {
-                message = e.message ?: "Não foi possível conectar ao PC."
-            } finally {
-                working = false
-            }
-        }
-    }
-
-    fun refresh(section: String, q: String = term) {
-        if (!paired || working) return
-        scope.launch {
-            working = true
-            message = ""
-            try {
-                entries = HubApi.list(ctx, section, q, games)
-                if (entries.isEmpty()) message = "Nenhum resultado nesta categoria."
-            } catch (e: Exception) {
-                message = e.message ?: "Falha ao pesquisar."
-            } finally {
-                working = false
-            }
-        }
-    }
-
-    LaunchedEffect(games, Api.host) {
-        paired = false
-        if (prefs.getString("key", "").isNullOrBlank()) return@LaunchedEffect
+    fun openUrl(url: String) {
         try {
-            HubApi.request(ctx, "/entertainment/status")
-            paired = true
-        } catch (_: Exception) {
-            paired = false
+            val u = Uri.parse(url)
+            if (u.scheme != "https") {
+                notice = "Somente páginas HTTPS são abertas."
+                return
+            }
+            ctx.startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) { notice = e.message ?: "Navegador indisponível" }
+    }
+
+    fun enqueue(item: HubItem, action: String, payload: JSONObject) {
+        HubStore.enqueue(ctx, item.title, action, payload)
+        revision++
+        notice = "Salvo no celular! A tarefa será enviada quando o PC conectar."
+        if (Api.connected) scope.launch {
+            HubSync.trySync(ctx, Api.host)
+            revision++
         }
     }
 
-    LaunchedEffect(paired, mode) {
-        if (paired && mode in setOf("installed", "video")) {
+    fun search() {
+        if (query.trim().length < 2) return
+        scope.launch {
+            busy = true
+            notice = ""
+            val requestedMode = mode
+            val requestedQuery = query.trim()
+            // Show an earlier cached result immediately, even without Internet.
+            results = HubStore.cachedResults(ctx, requestedMode, requestedQuery)
             try {
-                entries = HubApi.list(ctx, mode, "", games)
+                val fresh = withContext(Dispatchers.IO) {
+                    HubCatalog.search(requestedMode, requestedQuery)
+                }
+                HubStore.cacheResults(ctx, requestedMode, requestedQuery, fresh)
+                if (mode == requestedMode) results = fresh
+                notice = if (fresh.isEmpty()) "Sem resultados. Tente outro termo." else ""
             } catch (e: Exception) {
-                message = e.message.orEmpty()
-            }
+                notice = if (results.isNotEmpty())
+                    "Sem Internet ou fonte indisponível; mostrando pesquisa salva."
+                else "Não foi possível pesquisar: ${e.message}. Se for SteamRIP, abra o site no celular."
+            } finally { busy = false }
         }
     }
 
-    LaunchedEffect(paired, mode) {
-        if (paired && mode == "downloads") {
-            while (true) {
-                try {
-                    jobs = HubApi.request(ctx, "/entertainment/downloads").optJSONArray("items")
-                } catch (e: Exception) {
-                    message = e.message.orEmpty()
-                }
-                delay(1200)
-            }
+    LaunchedEffect(Unit) {
+        HubSync.schedule(ctx)
+        while (true) {
+            try {
+                val host = if (Api.connected) Api.host else ""
+                HubSync.trySync(ctx, host)
+            } catch (_: Exception) { }
+            revision++
+            delay(9000)
         }
     }
+
+    LaunchedEffect(mode) {
+        results = when (mode) {
+            "installed" -> HubStore.localItems(ctx, "game")
+            "video" -> HubStore.localItems(ctx, "video")
+            "favorites" -> HubStore.favorites(ctx, games)
+            "game", "steamrip", "movie", "series" ->
+                HubStore.cachedResults(ctx, mode, query.trim())
+            else -> emptyList()
+        }
+        notice = ""
+    }
+
+    val visible = when (mode) {
+        "favorites" -> HubStore.favorites(ctx, games)
+        "installed" -> HubStore.localItems(ctx, "game")
+        "video" -> HubStore.localItems(ctx, "video")
+        else -> results
+    }
+    val tasks = if (mode == "queue") HubStore.tasks(ctx).filter { task ->
+        if (games) task.action in setOf("steam_install", "steamrip_open", "game_launch")
+        else task.action in setOf("archive_download", "catalog_open", "video_play")
+    } else emptyList()
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(if (games) Icons.Default.SportsEsports else Icons.Default.Movie,
+                contentDescription = null, tint = NexusUi.Accent)
+            Text(if (games) "NEXUS Jogos" else "NEXUS Cinema",
+                color = NexusUi.Text, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f))
+            IconButton(onClick = { pairingPanel = !pairingPanel }) {
+                Icon(Icons.Default.Computer, contentDescription = "Configurar PC",
+                    tint = if (connected) NexusUi.Success else NexusUi.Muted)
+            }
+        }
         Text(
-            if (games) "NEXUS Jogos" else "NEXUS Cinema",
-            color = NexusUi.Text, style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            if (games) "Pesquise na Steam e instale pela sua conta no PC."
-            else "Encontre filmes e séries e reproduza arquivos que já estão no PC.",
+            if (games) "Explore lojas no celular, guarde jogos e prepare instalações."
+            else "Pesquise no celular, salve favoritos e organize o que quer assistir.",
             color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall
         )
+        Text(
+            if (connected) "PC conectado • tarefas sincronizadas automaticamente"
+            else "Modo independente • PC desligado ou não pareado",
+            color = if (connected) NexusUi.Success else NexusUi.Accent,
+            style = MaterialTheme.typography.labelMedium
+        )
 
-        if (!paired) {
-            Surface(
-                color = NexusUi.Panel,
-                shape = RoundedCornerShape(18.dp),
-                border = BorderStroke(1.dp, NexusUi.Border)
-            ) {
-                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Parear a Central", fontWeight = FontWeight.Bold, color = NexusUi.Text)
+        if (pairingPanel) {
+            Surface(color = NexusUi.Panel, shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, NexusUi.Border)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Conexão com o PC (opcional)", color = NexusUi.Text,
+                        fontWeight = FontWeight.SemiBold)
                     Text(
-                        "No Windows: ícone do NEXUS ao lado do relógio → Mostrar código NEXUS Central. Digite o código abaixo.",
-                        color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall
-                    )
-                    OutlinedTextField(value = code, onValueChange = { code = it.trim() },
-                        label = { Text("Código de pareamento") }, singleLine = true,
+                        "O catálogo funciona sem PC. Para sincronizar, no Windows abra " +
+                            "o ícone do NEXUS → Mostrar código NEXUS Central. " +
+                            "O código é necessário somente para enviar comandos.",
+                        color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(value = pairingCode,
+                        onValueChange = { pairingCode = it.trim() },
+                        label = { Text("Código do PC") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth())
-                    Button(enabled = code.isNotBlank() && !working, onClick = {
+                    Button(onClick = {
+                        HubStore.setKey(ctx, pairingCode)
+                        if (Api.connected) HubStore.setHost(ctx, Api.host)
+                        pairingPanel = false
                         scope.launch {
-                            working = true
-                            prefs.edit().putString("key", code).apply()
-                            try {
-                                HubApi.request(ctx, "/entertainment/status")
-                                paired = true
-                                message = "Central conectada!"
-                            } catch (e: Exception) {
-                                paired = false
-                                message = e.message ?: "Não foi possível parear."
-                            } finally { working = false }
+                            val ok = HubSync.trySync(ctx, if (Api.connected) Api.host else "")
+                            notice = if (ok) "PC sincronizado." else
+                                "Código salvo. Você pode continuar usando a biblioteca."
+                            revision++
                         }
-                    }) { Text("Conectar Central") }
-                }
-            }
-        } else {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val sections = if (games) listOf("game" to "Steam", "steamrip" to "SteamRIP", "installed" to "Instalados")
-                               else listOf("movie" to "Filmes", "series" to "Séries",
-                                           "video" to "Meus vídeos", "downloads" to "Downloads")
-                sections.forEach { (id, label) ->
-                    FilterChip(selected = mode == id, onClick = {
-                        mode = id
-                        entries = emptyList()
-                        message = ""
-                    }, label = { Text(label) })
-                }
-            }
-
-            if (mode in setOf("movie", "series", "game", "steamrip")) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = term, onValueChange = { term = it },
-                        label = { Text(if (games) "Nome do jogo" else "Título do filme ou série") },
-                        singleLine = true, modifier = Modifier.weight(1f)
-                    )
-                    Button(enabled = !working && term.trim().length >= 2,
-                        onClick = { refresh(mode) }) {
-                        Icon(Icons.Default.Search, contentDescription = "Buscar")
-                    }
-                }
-                if (mode == "steamrip") {
-                    Text(
-                        "Fonte externa: os links e arquivos não são verificados pelo NEXUS. " +
-                            "Downloads, extração e execução automáticos estão desativados.",
-                        color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall
-                    )
-                    OutlinedButton(
-                        enabled = !working && term.trim().length >= 2,
-                        onClick = {
-                            command(
-                                "/entertainment/steamrip",
-                                JSONObject().put("query", term.trim())
-                            )
-                        }
-                    ) {
-                        Icon(Icons.Default.OpenInBrowser, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Abrir pesquisa no navegador do PC")
+                    }, enabled = pairingCode.isNotBlank()) {
+                        Text("Salvar e tentar sincronizar")
                     }
                 }
             }
+        }
 
-            if (mode == "downloads") {
-                Text("Downloads diretamente no PC", color = NexusUi.Text, fontWeight = FontWeight.Bold)
-                Text("Cole um link direto autorizado de vídeo do Internet Archive (archive.org/download/).",
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            tabs.forEach { (id, label) ->
+                FilterChip(selected = mode == id, onClick = { mode = id },
+                    label = { Text(label) })
+            }
+        }
+
+        if (mode in setOf("game", "steamrip", "movie", "series")) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(value = query, onValueChange = { query = it },
+                    label = { Text(if (games) "Pesquisar jogo" else "Pesquisar título") },
+                    singleLine = true, modifier = Modifier.weight(1f))
+                Button(onClick = { search() },
+                    enabled = !busy && query.trim().length >= 2) {
+                    Icon(Icons.Default.Search, contentDescription = "Pesquisar")
+                }
+            }
+            if (mode == "steamrip") {
+                Text("Fonte externa. Os links podem mudar; o NEXUS não instala nem executa cracks.",
                     color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(
-                    value = directLink, onValueChange = { directLink = it },
-                    label = { Text("Endereço HTTPS do arquivo") },
-                    modifier = Modifier.fillMaxWidth(), maxLines = 2
-                )
-                Button(enabled = directLink.isNotBlank() && !working, onClick = {
-                    command("/entertainment/download", JSONObject().put("url", directLink))
-                }) {
-                    Icon(Icons.Default.Download, contentDescription = null)
+                OutlinedButton(onClick = { openUrl(HubCatalog.steamRipSearchUrl(query)) },
+                    enabled = query.trim().length >= 2) {
+                    Icon(Icons.Default.OpenInBrowser, null)
                     Spacer(Modifier.width(6.dp))
-                    Text("Baixar no PC")
+                    Text("Pesquisar SteamRIP no celular")
                 }
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val snapshot = jobs
-                    items(snapshot?.length() ?: 0) { i ->
-                        val job = snapshot?.optJSONObject(i) ?: JSONObject()
-                        val downloaded = job.optLong("downloaded")
-                        val total = job.optLong("total")
-                        Surface(color = NexusUi.Panel, shape = RoundedCornerShape(12.dp)) {
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text(job.optString("title"), color = NexusUi.Text, fontWeight = FontWeight.SemiBold)
-                                Text("${job.optString("state")} · ${downloaded / 1048576} MB" +
-                                    if (total > 0) " / ${total / 1048576} MB" else "",
+            }
+        }
+
+        if (mode == "download") {
+            Text("Agendar download no computador", color = NexusUi.Text,
+                fontWeight = FontWeight.Bold)
+            Text("Aceita arquivo de vídeo autorizado com link direto do Internet Archive. " +
+                "A tarefa fica guardada mesmo com o PC desligado.",
+                color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(value = videoUrl, onValueChange = { videoUrl = it },
+                label = { Text("https://archive.org/download/.../video.mp4") },
+                modifier = Modifier.fillMaxWidth(), maxLines = 3)
+            Button(enabled = videoUrl.isNotBlank(), onClick = {
+                try {
+                    val u = URL(videoUrl.trim())
+                    require(u.protocol == "https" && u.host == "archive.org" &&
+                        u.path.startsWith("/download/") &&
+                        listOf(".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v")
+                            .any { u.path.lowercase().endsWith(it) })
+                    val item = HubItem(videoUrl.trim(), "Vídeo do Internet Archive")
+                    enqueue(item, "archive_download", JSONObject().put("url", videoUrl.trim()))
+                    videoUrl = ""
+                } catch (_: Exception) {
+                    notice = "Use um link HTTPS direto de vídeo do Internet Archive."
+                }
+            }) { Text("Adicionar à fila do PC") }
+        }
+
+        if (mode == "queue") {
+            Text("Salvo na memória do celular", color = NexusUi.Text,
+                fontWeight = FontWeight.Bold)
+            Text("Não precisa do PC ligado. Depois do primeiro pareamento, o NEXUS " +
+                "tenta enviar a fila quando reencontrar o computador.",
+                color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+            if (tasks.isEmpty()) Text("Nenhuma tarefa nesta fila.", color = NexusUi.Muted)
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(tasks, key = { it.id }) { task ->
+                    Surface(color = NexusUi.Panel, shape = RoundedCornerShape(12.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(task.title, color = NexusUi.Text, fontWeight = FontWeight.Bold)
+                                Text(if (task.status == "sent") "Enviado ao PC" else
+                                    "Aguardando conexão com o PC",
                                     color = NexusUi.Muted)
-                                if (total > 0) {
-                                    LinearProgressIndicator(
-                                        progress = { (downloaded.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                                if (job.optString("error").isNotBlank()) {
-                                    Text(job.optString("error"), color = MaterialTheme.colorScheme.error)
-                                }
-                                if (job.optString("state") in setOf("queued", "connecting", "downloading")) {
-                                    TextButton(onClick = {
-                                        command("/entertainment/cancel",
-                                            JSONObject().put("id", job.optString("id")))
-                                    }) { Text("Cancelar") }
-                                }
+                            }
+                            IconButton(onClick = {
+                                HubStore.removeTask(ctx, task.id)
+                                revision++
+                            }) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "Excluir tarefa",
+                                    tint = NexusUi.Muted)
                             }
                         }
                     }
                 }
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(entries, key = { it.kind + it.id + it.title }) { item ->
-                        Surface(
-                            color = NexusUi.Panel,
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, NexusUi.Border)
-                        ) {
-                            Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                if (item.image.startsWith("https://")) {
-                                    AsyncImage(
-                                        model = item.image, contentDescription = item.title,
-                                        modifier = Modifier.size(width = 80.dp, height = 106.dp)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Box(Modifier.size(width = 60.dp, height = 92.dp)
-                                        .background(NexusUi.PanelRaised, RoundedCornerShape(8.dp)),
-                                        contentAlignment = Alignment.Center) {
-                                        Icon(if (games) Icons.Default.SportsEsports else Icons.Default.Movie,
-                                            null, tint = NexusUi.Accent)
+            }
+        } else if (mode != "download") {
+            if (mode == "installed" || mode == "video") {
+                Text("Última biblioteca sincronizada com o PC", color = NexusUi.Text,
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            if (mode == "favorites") {
+                Text("Seus favoritos ficam guardados neste celular.", color = NexusUi.Muted,
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            if (visible.isEmpty() && !busy) {
+                Text(when (mode) {
+                    "installed", "video" -> "Nenhuma biblioteca salva ainda. Conecte ao PC uma vez para importar."
+                    "favorites" -> "Toque no coração de um título para salvá-lo."
+                    else -> "Pesquise algum título para começar."
+                }, color = NexusUi.Muted, style = MaterialTheme.typography.bodySmall)
+            }
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(visible, key = { it.kind + it.id }) { item ->
+                    Surface(color = NexusUi.Panel, shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, NexusUi.Border)) {
+                        Row(Modifier.fillMaxWidth().padding(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (item.image.startsWith("https://")) {
+                                AsyncImage(model = item.image, contentDescription = item.title,
+                                    modifier = Modifier.size(width = 74.dp, height = 94.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop)
+                            } else {
+                                Icon(if (games) Icons.Default.SportsEsports else Icons.Default.Movie,
+                                    null, tint = NexusUi.Accent, modifier = Modifier.size(42.dp))
+                            }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Row(verticalAlignment = Alignment.Top) {
+                                    Text(item.title, color = NexusUi.Text, fontWeight = FontWeight.Bold,
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f))
+                                    IconButton(onClick = {
+                                        HubStore.toggleFavorite(ctx, item)
+                                        revision++
+                                    }, modifier = Modifier.size(34.dp)) {
+                                        Icon(if (HubStore.isFavorite(ctx, item)) Icons.Default.Favorite
+                                            else Icons.Default.FavoriteBorder,
+                                            contentDescription = "Salvar favorito", tint = NexusUi.Accent,
+                                            modifier = Modifier.size(21.dp))
                                     }
                                 }
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    Text(item.title, color = NexusUi.Text, fontWeight = FontWeight.Bold,
-                                        maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    Text(item.subtitle, color = NexusUi.Muted,
-                                        style = MaterialTheme.typography.labelSmall)
-                                    if (item.description.isNotBlank()) {
-                                        Text(item.description, color = NexusUi.Muted,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                Text(item.subtitle, color = NexusUi.Muted,
+                                    style = MaterialTheme.typography.labelSmall)
+                                if (item.description.isNotBlank()) {
+                                    Text(item.description, color = NexusUi.Muted,
+                                        style = MaterialTheme.typography.bodySmall, maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis)
+                                }
+                                when (item.kind) {
+                                    "game" -> {
+                                        TextButton(onClick = { openUrl(item.url) }) {
+                                            Text("Abrir Steam no celular")
+                                        }
+                                        Button(onClick = {
+                                            enqueue(item, "steam_install",
+                                                JSONObject().put("id", item.id))
+                                        }) { Text("Instalar quando PC conectar") }
                                     }
-                                    when (item.kind) {
-                                        "movie", "series" -> {
-                                            OutlinedButton(enabled = item.url.isNotBlank() && !working,
-                                                onClick = { command("/entertainment/open",
-                                                    JSONObject().put("url", item.url)) }) {
-                                                Text("Abrir informações no PC")
-                                            }
+                                    "steamrip" -> {
+                                        TextButton(onClick = { openUrl(item.url) }) {
+                                            Text("Ver SteamRIP no celular")
                                         }
-                                        "game" -> {
-                                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                                OutlinedButton(enabled = !working, onClick = {
-                                                    command("/entertainment/steam",
-                                                        JSONObject().put("id", item.id).put("action", "store"))
-                                                }) { Text("Steam") }
-                                                Button(enabled = !working, onClick = {
-                                                    command("/entertainment/steam",
-                                                        JSONObject().put("id", item.id).put("action", "install"))
-                                                }) { Text("Instalar") }
-                                            }
-                                        }
-                                        "steamrip" -> {
-                                            Button(
-                                                enabled = !working,
-                                                onClick = {
-                                                    command(
-                                                        "/entertainment/steamrip",
-                                                        JSONObject().put("url", item.url)
-                                                    )
-                                                }
-                                            ) { Text("Abrir página no PC") }
-                                        }
-                                        "installed-game" -> {
-                                            Button(enabled = !working, onClick = {
-                                                command("/entertainment/launch-game",
-                                                    JSONObject().put("id", item.id))
-                                            }) { Text("Jogar no PC") }
-                                        }
-                                        "local-video" -> {
-                                            Button(enabled = !working, onClick = {
-                                                command("/entertainment/play",
-                                                    JSONObject().put("id", item.id))
-                                            }) { Text("Reproduzir no PC") }
-                                        }
+                                        OutlinedButton(onClick = {
+                                            enqueue(item, "steamrip_open",
+                                                JSONObject().put("url", item.url))
+                                        }) { Text("Abrir no PC depois") }
                                     }
+                                    "movie", "series" -> {
+                                        TextButton(onClick = { openUrl(item.url) }) {
+                                            Text("Ver detalhes no celular")
+                                        }
+                                        OutlinedButton(onClick = {
+                                            enqueue(item, "catalog_open",
+                                                JSONObject().put("url", item.url))
+                                        }) { Text("Abrir no PC depois") }
+                                    }
+                                    "installed-game" -> Button(onClick = {
+                                        enqueue(item, "game_launch", JSONObject().put("id", item.id))
+                                    }) { Text("Jogar no PC") }
+                                    "local-video" -> Button(onClick = {
+                                        enqueue(item, "video_play", JSONObject().put("id", item.id))
+                                    }) { Text("Reproduzir no PC") }
                                 }
                             }
                         }
@@ -408,9 +368,10 @@ fun EntertainmentHub(games: Boolean) {
                 }
             }
         }
-        if (working) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        if (message.isNotBlank()) {
-            Text(message, color = NexusUi.Accent, style = MaterialTheme.typography.bodySmall)
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (notice.isNotBlank()) {
+            Text(notice, color = NexusUi.Accent,
+                style = MaterialTheme.typography.bodySmall)
         }
     }
 }
