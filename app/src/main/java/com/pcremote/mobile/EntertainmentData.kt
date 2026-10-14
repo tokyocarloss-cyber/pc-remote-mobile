@@ -327,7 +327,34 @@ internal object HubCatalog {
                     "https://archive.org/details/$identifier", kind)
             }
         }.getOrDefault(emptyList())
-        val all = primary + archive
+        // Wikipedia em português enriquece resumos estrangeiros quando o título confere.
+        // Não inventa links de download e ignora páginas que não combinam com o título.
+        val wiki: Map<String, Pair<String, String>> = runCatching {
+            val data = jsonGet("https://pt.wikipedia.org/w/api.php?action=query" +
+                "&generator=search&gsrsearch=$q&gsrnamespace=0&gsrlimit=15" +
+                "&prop=pageimages%7Cextracts&pithumbsize=400&exintro=1" +
+                "&explaintext=1&exchars=350&format=json&formatversion=2")
+            val pages = data.optJSONObject("query")?.optJSONArray("pages") ?: JSONArray()
+            (0 until pages.length()).mapNotNull { i ->
+                val o = pages.optJSONObject(i) ?: return@mapNotNull null
+                val title = normalizedTitle(o.optString("title"))
+                val summary = o.optString("extract").trim()
+                val image = o.optJSONObject("thumbnail")?.optString("source").orEmpty()
+                if (title.length < 4 || summary.isBlank()) null
+                else title to (summary to image)
+            }.toMap()
+        }.getOrDefault(emptyMap())
+        val localized = primary.map { item ->
+            val matchKey = normalizedTitle(item.title)
+            val entry = wiki[matchKey] ?: wiki.entries.firstOrNull { (key, _) ->
+                matchKey.length >= 5 && key.startsWith("${matchKey} ")
+            }?.value
+            if (entry != null) item.copy(
+                description = entry.first.take(350),
+                image = item.image.ifBlank { entry.second }
+            ) else item
+        }
+        val all = localized + archive
         val selected = all.filter { relevance(it, term) >= 60 }
         val filtered = if (selected.isNotEmpty()) selected else all
         return filtered.distinctBy { normalizedTitle(it.title) + ":" +
