@@ -2,6 +2,18 @@
 
 Esta branch preserva as funções anteriores do NEXUS e corrige a arquitetura do Cinema e dos Jogos: **o catálogo pode ser usado no celular sem o PC ligado ou pareado**.
 
+## NEXUS 1.3.2 — Navegador integrado e downloads direto no PC
+
+- **Cinema e Jogos** possuem um botão **Navegador NEXUS · baixar no PC**, sem abrir o Chrome. As páginas de catálogo, SteamRIP e fontes comunitárias agora também abrem nesse navegador interno.
+- Ao tocar num arquivo de download HTTPS compatível dentro do navegador, o Android registra uma tarefa `web_download` na **fila local** sem gravar o arquivo no armazenamento do telefone.
+- Depois de um primeiro pareamento, quando o Windows estiver ligado e o companion disponível, o PC busca o arquivo do **servidor de origem** e grava em `Downloads/NEXUS`. O celular mostra o progresso disponível em **Cinema/Jogos > Fila** (enquanto conectado) e permite cancelar.
+- Formatos aceitos: vídeos, compactados ZIP/RAR/7z/tar/gz/ISO, PDF e áudio. Não há execução automática, extração de arquivos ou desativação de antivírus.
+- **Steam oficial**: jogos instalados pelo cliente Steam no PC e pela conta com licença, não por URL genérica.
+- Nem todo site permite transferência direta: links sujeitos a login, cookies, CAPTCHA, páginas intermediárias, arquivos `blob:`, magnet links e downloads protegidos por JavaScript podem falhar. O app relata falha ao invés de fingir que concluiu.
+- A fila aguarda o PC estar ligado, mas a transferência precisa da conexão Internet do próprio PC. O download web nesta versão não oferece retomada/resume após reiniciar o companion e a tela só consulta progresso dos jobs atuais.
+- Downloads são arquivos de terceiros, não verificados ou seguros por definição. Não execute cracks ou programas desconhecidos. Instale somente arquivos cuja origem e licença você conhece.
+- O dispatcher do Windows valida HTTPS público e bloqueia IPs locais/loopback e redirecionamentos privados para reduzir riscos de acesso indevido à rede interna. Não transforme o companion em serviço exposto à Internet.
+
 ## NEXUS Cinema 1.3.1 — Fontes oficiais + comunidade
 
 A aba **Cinema > Fontes** reúne os dois tipos de serviços lado a lado, sem exigir pareamento:
