@@ -113,14 +113,14 @@ class _GamesParser(HTMLParser):
             except ValueError:
                 self.current = None
                 return
-            self.current = {"url": href, "texts": [], "image": ""}
+            self.current = {"url": href, "texts": [], "fallbacks": [], "image": ""}
             for field in ("title", "aria-label"):
                 if attrs.get(field):
-                    self.current["texts"].append(attrs[field])
+                    self.current["fallbacks"].append(attrs[field])
         elif tag == "img" and self.current:
             for field in ("alt", "title"):
                 if attrs.get(field):
-                    self.current["texts"].append(attrs[field])
+                    self.current["fallbacks"].append(attrs[field])
             for field in ("data-src", "data-lazy-src", "src"):
                 img = _safe_image(attrs.get(field, ""))
                 if img:
@@ -140,7 +140,7 @@ class _GamesParser(HTMLParser):
         self.current = None
         if not entry or entry["url"] in self.urls:
             return
-        name = " ".join(entry["texts"]).strip()
+        name = " ".join(entry["texts"] or entry["fallbacks"]).strip()
         name = re.sub(r"\s+", " ", html.unescape(name))[:120]
         if not name or len(name) > 110:
             slug = PurePosixPath(urllib.parse.urlsplit(entry["url"]).path).name
