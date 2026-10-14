@@ -21,6 +21,7 @@ from pathlib import Path
 from datetime import datetime
 
 import pc_remote_server as servermod
+import steamrip_catalog
 
 STATE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "NEXUS PC Remote"
 STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -103,6 +104,8 @@ def search(kind, query):
                 "kind": "series"
             })
         return items
+    if kind == "steamrip":
+        return steamrip_catalog.search(query)
     if kind == "game":
         data = _fetch_json(
             "https://store.steampowered.com/api/storesearch/"
