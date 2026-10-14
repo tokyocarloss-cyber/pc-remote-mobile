@@ -662,7 +662,11 @@ class CompanionHandler(servermod.H):
                 data = json.loads(raw.decode('utf-8'))
                 if not isinstance(data, dict):
                     raise ValueError('Objeto JSON esperado')
-                if path == '/entertainment/download':
+                if path == '/entertainment/dispatch':
+                    result = entertainment.dispatch_task(
+                        data.get('id', ''), data.get('action', ''),
+                        data.get('payload', {}))
+                elif path == '/entertainment/download':
                     result = entertainment.start_download(data.get('url', ''))
                 elif path == '/entertainment/cancel':
                     result = entertainment.cancel_download(data.get('id', ''))
