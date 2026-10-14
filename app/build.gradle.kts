@@ -17,8 +17,8 @@ android {
         applicationId = "com.pcremote.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.1.0"
+        versionCode = 11
+        versionName = "1.4.0"
     }
 
     signingConfigs {
@@ -67,6 +67,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("org.jsoup:jsoup:1.18.3")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
