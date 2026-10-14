@@ -15,6 +15,7 @@
   <activity android:name=".NexusV2Activity" android:exported="true">
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
   </activity>
+  <activity android:name=".NexusBrowserActivity" android:exported="false"/>
   <activity android:name=".NexusActivity" android:exported="false"/>
   <activity android:name=".MainActivity" android:exported="false"/>
   <activity android:name=".ShareReceiverActivity" android:exported="true" android:noHistory="true">
