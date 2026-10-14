@@ -47,7 +47,7 @@ class NexusBrowserActivity : ComponentActivity() {
     private fun destination(raw: String): String? = try {
         val parsed = URI(raw.trim())
         if (parsed.scheme?.lowercase() != "https" || parsed.host.isNullOrBlank() ||
-            parsed.userInfo != null || parsed.port !in -1..443) null
+            parsed.userInfo != null || parsed.port != -1 && parsed.port != 443) null
         else parsed.toASCIIString()
     } catch (_: Exception) { null }
 
@@ -102,7 +102,7 @@ class NexusBrowserActivity : ComponentActivity() {
         control("‹") { if (browser.canGoBack()) browser.goBack() else finish() }
         control("›") { if (browser.canGoForward()) browser.goForward() }
         address = EditText(this).apply {
-            singleLine = true
+            setSingleLine(true)
             textSize = 12f
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
@@ -151,7 +151,7 @@ class NexusBrowserActivity : ComponentActivity() {
             }
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
-                    progress.progress = newProgress
+                    this@NexusBrowserActivity.progress.progress = newProgress
                 }
             }
             setDownloadListener(DownloadListener { url, _, disposition, _, _ ->
