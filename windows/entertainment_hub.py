@@ -33,7 +33,7 @@ VIDEO_DIR = Path.home() / "Videos" / "NEXUS"
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 SUFFIXES = {".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v"}
 MAX_BYTES = 10 * 1024 ** 3
-GAME_STORES = {"Steam", "Epic", "Xbox", "EA", "Ubisoft", "Battle.net", "GOG"}
+GAME_STORES = {"Steam", "Epic", "Xbox", "EA", "Ubisoft", "Battle.net", "GOG", "Alll"}
 _LOCK = threading.Lock()
 _JOBS = {}
 _CANCELLATIONS = {}
