@@ -48,6 +48,28 @@ class HubTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             hub._archive_host("https://archive.org.evil.com/video.mp4")
 
+    def test_offline_queue_dispatch_is_idempotent_across_restarts(self):
+        task = "a638a893-709a-41dd-b69c-a7fd06371ea7"
+        receipts = Path(self.temp.name) / "receipts.json"
+        with mock.patch.object(hub, "RECEIPTS_FILE", receipts), \
+                mock.patch.object(hub.os, "startfile", create=True) as startfile:
+            first = hub.dispatch_task(task, "steam_install", {"id": "620"})
+            second = hub.dispatch_task(task, "steam_install", {"id": "620"})
+        self.assertTrue(first["ok"])
+        self.assertFalse(first["duplicate"])
+        self.assertTrue(second["duplicate"])
+        startfile.assert_called_once_with("steam://install/620")
+        self.assertTrue(receipts.exists())
+
+    def test_offline_queue_rejects_untrusted_actions(self):
+        task = "b83c1b17-22b5-415a-a3ed-3b544f267bdf"
+        with mock.patch.object(hub, "RECEIPTS_FILE", Path(self.temp.name) / "receipts.json"):
+            with self.assertRaises(ValueError):
+                hub.dispatch_task(task, "execute_shell", {"command": "cmd"})
+            with self.assertRaises(ValueError):
+                hub.dispatch_task(task, "archive_download",
+                                  {"url": "https://bad.example/installer.exe"})
+
     def test_steam_install_uses_official_client(self):
         with mock.patch.object(hub.os, "startfile", create=True) as startfile:
             hub.steam_action("620", "install")
