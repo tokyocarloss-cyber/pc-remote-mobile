@@ -13,11 +13,24 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+
+private fun InputStream.readSmall(limit: Int): ByteArray {
+    val out = ByteArrayOutputStream()
+    val buffer = ByteArray(16 * 1024)
+    while (out.size() < limit) {
+        val n = read(buffer, 0, minOf(buffer.size, limit - out.size()))
+        if (n < 0) break
+        out.write(buffer, 0, n)
+    }
+    return out.toByteArray()
+}
 
 internal data class HubItem(
     val id: String, val title: String, val subtitle: String = "",
@@ -134,7 +147,7 @@ internal object HubCatalog {
             connection.setRequestProperty("User-Agent", "NEXUS-Android/1.3")
             if (connection.responseCode !in 200..299)
                 throw IllegalStateException("Catálogo indisponível: HTTP ${connection.responseCode}")
-            val bytes = connection.inputStream.use { it.readNBytes(1_600_000) }
+            val bytes = connection.inputStream.use { it.readSmall(1_600_000) }
             return JSONObject(String(bytes, Charsets.UTF_8))
         } finally { connection.disconnect() }
     }
@@ -217,7 +230,7 @@ internal object HubCatalog {
             c.connectTimeout = 6500
             c.readTimeout = 8500
             if (c.responseCode !in 200..299) throw IllegalStateException("Catálogo indisponível")
-            return c.inputStream.use { String(it.readNBytes(1_600_000), Charsets.UTF_8) }
+            return c.inputStream.use { String(it.readSmall(1_600_000), Charsets.UTF_8) }
         } finally { c.disconnect() }
     }
     fun steamRipSearchUrl(query: String): String =
@@ -245,7 +258,7 @@ internal object HubPc {
                 }
                 val response = c.responseCode
                 val body = (if (response in 200..299) c.inputStream else c.errorStream)
-                    ?.use { String(it.readNBytes(1_600_000), Charsets.UTF_8) }.orEmpty()
+                    ?.use { String(it.readSmall(1_600_000), Charsets.UTF_8) }.orEmpty()
                 val o = JSONObject(body.ifBlank { "{}" })
                 if (response !in 200..299)
                     error(o.optString("error", "Falha na conexão com PC ($response)"))
