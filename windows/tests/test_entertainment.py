@@ -48,6 +48,43 @@ class HubTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             hub._archive_host("https://archive.org.evil.com/video.mp4")
 
+    def test_browser_download_rejects_lan_and_insecure_urls(self):
+        bad = [
+            "http://example.com/game.zip", "file:///windows/system.ini",
+            "https://127.0.0.1/game.zip", "https://192.168.0.1/test.zip",
+            "https://localhost/test.zip", "https://attacker@site.example/game.zip",
+            "https://example.com:8080/game.zip",
+        ]
+        for url in bad:
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                hub._public_https_url(url)
+        with mock.patch.object(hub.socket, "getaddrinfo", return_value=[
+            (2, 1, 6, "", ("10.1.1.9", 443))
+        ]):
+            with self.assertRaises(ValueError):
+                hub._public_https_url("https://private.example/game.zip")
+
+    def test_browser_download_dispatch_queues_once(self):
+        task = "46b32337-c287-43ed-9686-6caa175b3a9b"
+        with mock.patch.object(hub, "RECEIPTS_FILE", Path(self.temp.name) / "receipts.json"), \
+                mock.patch.object(hub, "start_web_download",
+                                  return_value={"ok": True, "id": "pc_job"}) as download:
+            first = hub.dispatch_task(task, "web_download",
+                                      {"url": "https://files.example/game.zip", "games": True})
+            second = hub.dispatch_task(task, "web_download",
+                                       {"url": "https://files.example/game.zip", "games": True})
+        download.assert_called_once_with("https://files.example/game.zip")
+        self.assertFalse(first["duplicate"])
+        self.assertTrue(second["duplicate"])
+        self.assertEqual(first["pc_job_id"], "pc_job")
+
+    def test_web_redirect_blocks_private_network(self):
+        handler = hub._PublicDownloadRedirects()
+        request = urllib.request.Request("https://public.example/game.zip")
+        with self.assertRaises(ValueError):
+            handler.redirect_request(request, None, 302, "redirect", {},
+                                     "https://127.0.0.1/private.zip")
+
     def test_offline_queue_dispatch_is_idempotent_across_restarts(self):
         task = "a638a893-709a-41dd-b69c-a7fd06371ea7"
         receipts = Path(self.temp.name) / "receipts.json"
