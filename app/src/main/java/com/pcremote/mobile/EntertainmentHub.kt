@@ -47,7 +47,8 @@ fun EntertainmentHub(games: Boolean) {
     val tabs = if (games)
         listOf("game" to "Steam", "steamrip" to "SteamRIP", "installed" to "No meu PC",
             "favorites" to "Favoritos", "queue" to "Fila")
-    else listOf("movie" to "Filmes", "series" to "Séries", "video" to "Meus vídeos",
+    else listOf("movie" to "Filmes", "series" to "Séries", "sources" to "Fontes",
+        "video" to "Meus vídeos",
         "favorites" to "Favoritos", "download" to "Download", "queue" to "Fila")
 
     fun openUrl(url: String) {
@@ -130,7 +131,7 @@ fun EntertainmentHub(games: Boolean) {
     val tasks = remember(mode, games, revision) {
         if (mode == "queue") HubStore.tasks(ctx).filter { task ->
         if (games) task.action in setOf("steam_install", "steamrip_open", "game_launch")
-        else task.action in setOf("archive_download", "catalog_open", "video_play")
+        else task.action in setOf("archive_download", "catalog_open", "source_open", "video_play")
     } else emptyList()
     }
 
@@ -249,7 +250,20 @@ fun EntertainmentHub(games: Boolean) {
             }) { Text("Adicionar à fila do PC") }
         }
 
-        if (mode == "queue") {
+        if (mode == "sources") {
+            CinemaSources(
+                query = query,
+                changeQuery = { query = it },
+                open = ::openUrl,
+                queue = { source, phrase ->
+                    val item = HubItem(source.id, source.title)
+                    enqueue(item, "source_open",
+                        JSONObject().put("source", source.id).put("query", phrase))
+                },
+                revision = revision,
+                refreshSaved = { revision++ }
+            )
+        } else if (mode == "queue") {
             Text("Salvo na memória do celular", color = NexusUi.Text,
                 fontWeight = FontWeight.Bold)
             Text("Não precisa do PC ligado. Depois do primeiro pareamento, o NEXUS " +
@@ -278,7 +292,7 @@ fun EntertainmentHub(games: Boolean) {
                     }
                 }
             }
-        } else if (mode != "download") {
+        } else if (mode != "download" && mode != "sources") {
             if (mode == "installed" || mode == "video") {
                 Text("Última biblioteca sincronizada com o PC", color = NexusUi.Text,
                     style = MaterialTheme.typography.bodySmall)
@@ -357,6 +371,16 @@ fun EntertainmentHub(games: Boolean) {
                                         OutlinedButton(onClick = {
                                             enqueue(item, "catalog_open",
                                                 JSONObject().put("url", item.url))
+                                        }) { Text("Abrir no PC depois") }
+                                    }
+                                    "cinema-source" -> {
+                                        TextButton(onClick = {
+                                            openUrl(CinemaDirectories.url(item.id, ""))
+                                        }) { Text("Abrir fonte no celular") }
+                                        OutlinedButton(onClick = {
+                                            enqueue(item, "source_open",
+                                                JSONObject().put("source", item.id)
+                                                    .put("query", ""))
                                         }) { Text("Abrir no PC depois") }
                                     }
                                     "installed-game" -> Button(onClick = {
