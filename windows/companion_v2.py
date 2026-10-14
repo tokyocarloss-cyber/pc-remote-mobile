@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw
 
 import json
 import entertainment_hub as entertainment
+import steamrip_catalog
 import pc_remote_server as servermod
 from pc_remote_server import PORT, DISCOVERY_PORT, ROOT, GAMEPAD, local_ip, phone_connected, run_discovery_responder
 from drop_edge import DropEdge
@@ -671,6 +672,11 @@ class CompanionHandler(servermod.H):
                     result = entertainment.launch_game(str(data.get('id', '')))
                 elif path == '/entertainment/steam':
                     result = entertainment.steam_action(data.get('id', ''), data.get('action', ''))
+                elif path == '/entertainment/steamrip':
+                    result = steamrip_catalog.open_in_browser(
+                        url=str(data.get('url', '')),
+                        query=str(data.get('query', ''))
+                    )
                 elif path == '/entertainment/open':
                     result = entertainment.open_catalog_link(data.get('url', ''))
                 else:
