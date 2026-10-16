@@ -31,6 +31,7 @@
     <data android:mimeType="*/*"/>
    </intent-filter>
   </activity>
+  <service android:name=".PhoneMirrorService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
   <service android:name=".EdgeDropService" android:exported="false" android:foregroundServiceType="specialUse">
    <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="NEXUS Drop overlay used only while the user enables drag-to-PC"/>
   </service>
