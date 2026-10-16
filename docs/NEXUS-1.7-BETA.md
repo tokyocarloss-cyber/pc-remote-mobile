@@ -35,11 +35,14 @@ sem sobrescrever uma versão que o usuário já utiliza.
 
 ## O que continua pendente e por quê
 
-- **Navegar arquivos do Android dentro da janela do PC:** o antigo botão usa
-  um servidor `8767` opcional/inativo; não foi anunciado como consertado.
-  O novo navegador Android funciona localmente e pode enviar arquivos para
-  Windows; o Windows→Android ainda exige autorização de pasta e um protocolo
-  autenticado para listar/transferir arquivos sem expor a memória do celular.
+- **Explorador do Android no Windows:** substituído o botão HTTP 8767 por
+  painel Tk nativo: solicitar lista de pastas, navegar subpastas e baixar um
+  arquivo do celular para Downloads/NEXUS From Phone. A listagem sai do Android
+  apenas quando o serviço de controle foi ativado e existe pasta escolhida via
+  SAF na aba Arquivos. Identificadores de arquivos são temporários, e os dados
+  trafegam na conexão de saída do Android autenticada pelo código NEXUS Central.
+  Arquivos de até 256 MB (limite beta), não há operações de exclusão ou escrita
+  remota arbitrária no celular.
 - **Toques no Android pelo PC:** a visualização em MediaProjection não equivale
   a injetar toques. Uma futura implementação teria de solicitar permissões
   adequadas de maneira explícita, oferecer controles de segurança e validar
@@ -69,6 +72,9 @@ sem sobrescrever uma versão que o usuário já utiliza.
 6. Notificações: autorizar/desautorizar no Android, confirmar que não envia
    textos sem ambos os consentimentos ativos; verificar armazenamento só em
    memória e nenhum evento quando desligado.
+7. No painel Windows > Arquivos do celular: escolher pasta no SAF e ativar
+   controle no Android, navegar três níveis, baixar arquivo 50 MB, testar
+   download cancelado, desautorizar e verificar que listagens são apagadas.
 
 ## Build
 - Android: `gradle assembleDebug`
