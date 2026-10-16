@@ -2,6 +2,7 @@ package com.pcremote.mobile
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.os.SystemClock
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import java.io.BufferedInputStream
 import java.io.DataInputStream
 import java.net.HttpURLConnection
@@ -49,8 +51,12 @@ fun SmoothLiveScreen() {
     val prefs = remember { ctx.getSharedPreferences("nexus_stream", Context.MODE_PRIVATE) }
     var frame by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var actualFps by remember { mutableIntStateOf(0) }
+    var kbps by remember { mutableIntStateOf(0) }
+    var displayedWidth by remember { mutableIntStateOf(0) }
+    var displayedHeight by remember { mutableIntStateOf(0) }
     var count by remember { mutableIntStateOf(0) }
-    var lastFpsAt by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var intervalBytes by remember { mutableLongStateOf(0L) }
+    var lastFpsAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var targetFps by remember { mutableIntStateOf(prefs.getInt("fps", 60).let { if (it in listOf(30,60,120)) it else 60 }) }
     var qualityIndex by remember { mutableIntStateOf(prefs.getInt("quality", 0).coerceIn(0, ScreenQualities.lastIndex)) }
     var streamError by remember { mutableStateOf("") }
@@ -61,17 +67,31 @@ fun SmoothLiveScreen() {
     var controlsEdit by remember { mutableStateOf(false) }
     val quality = ScreenQualities[qualityIndex]
 
-    fun registerFrame(bytes: ByteArray) {
-        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+    // Only publish already decoded bitmaps on the main thread. JPEG decoding
+    // happens on Dispatchers.Default; no frame queue can grow indefinitely.
+    fun registerDecodedFrame(bmp: android.graphics.Bitmap, compressedBytes: Int) {
         frame = bmp.asImageBitmap()
+        displayedWidth = bmp.width
+        displayedHeight = bmp.height
         Api.connected = true
         count++
-        val now = System.currentTimeMillis()
-        if (now - lastFpsAt >= 1000) {
-            actualFps = count
+        intervalBytes += compressedBytes
+        val now = SystemClock.elapsedRealtime()
+        val elapsed = now - lastFpsAt
+        if (elapsed >= 1000L) {
+            actualFps = (count * 1000L / elapsed).toInt()
+            kbps = (intervalBytes * 8L / elapsed).toInt()
             count = 0
+            intervalBytes = 0L
             lastFpsAt = now
         }
+    }
+
+    suspend fun decodeFrame(bytes: ByteArray) {
+        val bmp = withContext(Dispatchers.Default) {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } ?: return
+        withContext(Dispatchers.Main) { registerDecodedFrame(bmp, bytes.size) }
     }
 
     fun hotkey(name: String) = scope.launch(Dispatchers.IO) { Api.post("/hotkey", name) }
@@ -79,7 +99,7 @@ fun SmoothLiveScreen() {
     fun clickAt(pos: Offset, double: Boolean = false) {
         val s = viewport
         if (s.width <= 0 || s.height <= 0) return
-        val imageAspect = quality.w.toFloat() / quality.h.toFloat()
+        val imageAspect = if (displayedWidth > 0 && displayedHeight > 0) displayedWidth.toFloat() / displayedHeight else quality.w.toFloat() / quality.h.toFloat()
         val boxAspect = s.width.toFloat() / s.height.toFloat()
         val drawW: Float
         val drawH: Float
@@ -105,34 +125,61 @@ fun SmoothLiveScreen() {
         }
     }
 
-    suspend fun rawStreamSession(): Boolean = withContext(Dispatchers.IO) {
-        var conn: HttpURLConnection? = null
-        try {
-            val path = "http://${Api.host}:8765/stream.raw?w=${quality.w}&h=${quality.h}&q=${quality.jpeg}&fps=$targetFps"
-            conn = (URL(path).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 1800
-                readTimeout = 2800
-                useCaches = false
-                setRequestProperty("Connection", "close")
+    suspend fun rawStreamSession(): Boolean = coroutineScope {
+        // CONFLATED keeps *one* waiting packet. When decoding cannot keep up,
+        // old JPEGs are discarded instead of making the picture seconds late.
+        val latest = Channel<ByteArray>(Channel.CONFLATED)
+        val renderer = launch(Dispatchers.Default) {
+            for (packet in latest) {
+                decodeFrame(packet)
             }
-            if (conn.responseCode !in 200..299) return@withContext false
-            transport = "STREAM"
-            streamError = ""
-            DataInputStream(BufferedInputStream(conn.inputStream, 1024 * 1024)).use { input ->
-                while (currentCoroutineContext().isActive) {
-                    val length = input.readInt()
-                    if (length !in 512..20_000_000) return@withContext false
-                    val bytes = ByteArray(length)
-                    input.readFully(bytes)
-                    withContext(Dispatchers.Main) { registerFrame(bytes) }
-                }
-            }
-            true
-        } catch (_: Exception) {
-            false
-        } finally {
-            try { conn?.disconnect() } catch (_: Exception) {}
         }
+        val result = withContext(Dispatchers.IO) {
+            var conn: HttpURLConnection? = null
+            try {
+                val path = "http://${Api.host}:8765/stream.raw?w=${quality.w}&h=${quality.h}&q=${quality.jpeg}&fps=$targetFps"
+                conn = (URL(path).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 1800
+                    readTimeout = 3200
+                    useCaches = false
+                    setRequestProperty("Accept-Encoding", "identity")
+                    setRequestProperty("Connection", "close")
+                }
+                val activeConnection = conn
+                // Cancellation must close an HTTP socket even while readFully blocks.
+                val cancellation = currentCoroutineContext()[Job]?.invokeOnCompletion {
+                    activeConnection?.disconnect()
+                }
+                try {
+                    if (conn.responseCode !in 200..299) return@withContext false
+                    withContext(Dispatchers.Main) {
+                        transport = "STREAM"
+                        streamError = ""
+                    }
+                    DataInputStream(BufferedInputStream(conn.inputStream, 256 * 1024)).use { input ->
+                        while (currentCoroutineContext().isActive) {
+                            val length = input.readInt()
+                            if (length !in 512..8_000_000) return@withContext false
+                            val bytes = ByteArray(length)
+                            input.readFully(bytes)
+                            latest.trySend(bytes)
+                        }
+                    }
+                    true
+                } finally {
+                    cancellation?.dispose()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                false
+            } finally {
+                try { conn?.disconnect() } catch (_: Exception) {}
+            }
+        }
+        latest.close()
+        renderer.cancelAndJoin()
+        result
     }
 
     suspend fun fallbackBurst(durationMs: Long = 4500L) = withContext(Dispatchers.IO) {
@@ -150,9 +197,9 @@ fun SmoothLiveScreen() {
                 }
                 if (conn.responseCode in 200..299) {
                     val bytes = conn.inputStream.use { it.readBytes() }
-                    if (bytes.isNotEmpty()) withContext(Dispatchers.Main) {
-                        registerFrame(bytes)
-                        streamError = ""
+                    if (bytes.isNotEmpty()) {
+                        decodeFrame(bytes)
+                        withContext(Dispatchers.Main) { streamError = "" }
                     }
                 }
             } catch (_: Exception) {
@@ -167,12 +214,18 @@ fun SmoothLiveScreen() {
     LaunchedEffect(Api.host, targetFps, qualityIndex) {
         if (Api.host.isBlank()) return@LaunchedEffect
         actualFps = 0
+        kbps = 0
         count = 0
+        intervalBytes = 0L
+        lastFpsAt = SystemClock.elapsedRealtime()
+        frame = null
+        displayedWidth = 0
+        displayedHeight = 0
         while (isActive && Api.host.isNotBlank()) {
-            streamError = if (frame == null) "Conectando transmissão…" else ""
+            streamError = "Conectando transmissão…"
             val rawOk = rawStreamSession()
             if (!rawOk && isActive) {
-                streamError = if (frame == null) "Usando modo compatível…" else ""
+                streamError = "Usando modo compatível (até 30 FPS)…"
                 fallbackBurst()
             }
             if (isActive) delay(120)
@@ -313,13 +366,13 @@ fun SmoothLiveScreen() {
                         Box(Modifier.size(7.dp).background(if (frame != null) NexusUi.Success else NexusUi.Muted, CircleShape))
                         Spacer(Modifier.width(7.dp))
                         Text(
-                            if (frame != null) "${quality.name.uppercase()} • TOUCH • $transport" else "SEM VÍDEO",
+                            if (frame != null) "${displayedWidth}×${displayedHeight} REAL • $transport" else "SEM VÍDEO",
                             color = if (frame != null) NexusUi.Success else NexusUi.Muted,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
-                    Text("$actualFps FPS real • alvo $targetFps", color = NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
+                    Text("$actualFps FPS • ${kbps / 1000f} Mbps • até $targetFps", color = NexusUi.Muted, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
