@@ -199,6 +199,7 @@ private fun V2Page(page:Int,go:(Int)->Unit){
         10->EntertainmentHub(games=false)
         11->EntertainmentHub(games=true)
         12->V2Shortcuts(go)
+        13->PhoneMirrorScreen()
         else->V2Home(go)
     }
 }
