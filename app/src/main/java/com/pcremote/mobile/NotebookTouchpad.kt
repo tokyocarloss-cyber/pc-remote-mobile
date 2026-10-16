@@ -22,15 +22,48 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.hypot
+
+/** Coalesces tiny pointer movements without rounding every gesture to zero. */
+private class PointerMotionQueue {
+    private var dx = 0f
+    private var dy = 0f
+
+    @Synchronized fun add(x: Float, y: Float) {
+        dx = (dx + x).coerceIn(-300f, 300f)
+        dy = (dy + y).coerceIn(-300f, 300f)
+    }
+
+    @Synchronized fun take(): Pair<Int, Int> {
+        val x = dx.toInt().coerceIn(-120, 120)
+        val y = dy.toInt().coerceIn(-120, 120)
+        dx -= x
+        dy -= y
+        return x to y
+    }
+}
 
 @Composable
 fun NotebookTouchpad(openKeyboard: () -> Unit) {
     val scope = rememberCoroutineScope()
     var multiTouch by remember { mutableStateOf(false) }
     var lastDistance by remember { mutableFloatStateOf(0f) }
+    val pendingMotion = remember { PointerMotionQueue() }
+
+    // One ordered sender; never start one network request for every touch event.
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            val (x, y) = pendingMotion.take()
+            if (x != 0 || y != 0) {
+                withContext(Dispatchers.IO) { Api.post("/mouse", "$x,$y") }
+            }
+            delay(12L)
+        }
+    }
 
     fun post(path: String, body: String) = scope.launch(Dispatchers.IO) { Api.post(path, body) }
 
@@ -62,9 +95,7 @@ fun NotebookTouchpad(openKeyboard: () -> Unit) {
                     detectDragGestures { change, d ->
                         if (multiTouch) return@detectDragGestures
                         change.consume()
-                        val x = (d.x * 1.20f).toInt()
-                        val y = (d.y * 1.20f).toInt()
-                        if (x != 0 || y != 0) post("/mouse", "$x,$y")
+                        pendingMotion.add(d.x * 1.20f, d.y * 1.20f)
                     }
                 }
                 .pointerInput(Unit) {
