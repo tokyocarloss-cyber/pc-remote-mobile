@@ -587,6 +587,8 @@ class CompanionHandler(servermod.H):
         return True
 
     def do_GET(self):
+        if not self.allow_local():
+            return
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         if path.startswith('/entertainment/'):
