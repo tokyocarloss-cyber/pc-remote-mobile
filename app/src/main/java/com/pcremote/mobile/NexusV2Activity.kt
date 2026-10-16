@@ -189,7 +189,7 @@ private fun V2Page(page:Int,go:(Int)->Unit){
         0->V2Home(go)
         1->ReferenceLibrary()
         2->AdvancedGamepad()
-        3->PcDrop()
+        3->NexusFilesHub()
         4->SmoothLiveScreen()
         5->NotebookTouchpad{go(6)}
         6->TextRemote()
