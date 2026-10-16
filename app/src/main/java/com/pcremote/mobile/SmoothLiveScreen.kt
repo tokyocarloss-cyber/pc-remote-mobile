@@ -148,7 +148,7 @@ fun SmoothLiveScreen() {
                 val activeConnection = conn
                 // Cancellation must close an HTTP socket even while readFully blocks.
                 val cancellation = currentCoroutineContext()[Job]?.invokeOnCompletion {
-                    activeConnection.disconnect()
+                    activeConnection?.disconnect()
                 }
                 try {
                     if (conn.responseCode !in 200..299) return@withContext false
