@@ -337,12 +337,12 @@ fun SmoothLiveScreen() {
                                 EdgeShortcut("ALT F4", Icons.Default.Close) { hotkey("ALT_F4") }
                                 EdgeShortcut("ALT TAB", Icons.Default.SwapHoriz) { hotkey("ALT_TAB") }
                                 EdgeShortcut("REC", Icons.Default.FiberManualRecord) {
-                                    scope.launch(Dispatchers.IO) { Api.post("/record-toggle", "") }
+                                    scope.launch(Dispatchers.IO) { RecorderClient.post(ctx, "/record-toggle", byteArrayOf()) }
                                 }
                                 EdgeShortcut("PRINT", Icons.Default.CropFree) { hotkey("SNIP") }
                                 EdgeShortcut("SALVAR", Icons.Default.Screenshot) {
                                     scope.launch(Dispatchers.IO) {
-                                        RemoteClient.post("/record/screenshot",
+                                        RecorderClient.post(ctx, "/record/screenshot",
                                             """{"device":"pc"}""".toByteArray())
                                     }
                                 }
