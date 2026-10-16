@@ -57,6 +57,11 @@ class PhoneControlBridge:
             self.enabled=enabled
             if not enabled:
                 self.queue.clear()
+                self.notices.clear()
+                self.file_state={'folder':'root','parent':'','items':[],
+                                 'error':'Controle do celular desativado',
+                                 'seq':self.file_state['seq']+1}
+                self.last_file=''
 
     def update_files(self,payload):
         if not isinstance(payload,dict) or not isinstance(payload.get('items'),list):
