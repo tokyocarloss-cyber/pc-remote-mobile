@@ -1,4 +1,4 @@
-import ctypes, io, os, shutil, struct, subprocess, sys, threading, time, urllib.parse, urllib.request, winreg
+import ctypes, io, os, shutil, socket, struct, subprocess, sys, threading, time, urllib.parse, urllib.request, winreg
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 
@@ -82,8 +82,15 @@ def first_run_autostart_prompt():
 FRAME_BYTES = b''
 FRAME_SEQ = 0
 FRAME_LOCK = threading.Lock()
+# The network sender waits for a new capture instead of busy-polling.
+FRAME_READY = threading.Condition(FRAME_LOCK)
 CAPTURE_ERROR = ''
 CAPTURE_SOURCE = 'iniciando'
+CAPTURE_FPS = 0.0
+CAPTURE_ENCODE_MS = 0.0
+CAPTURE_WIDTH = 0
+CAPTURE_HEIGHT = 0
+FRAME_LAST_AT = 0.0
 RECORDING = False
 RECORD_STARTED_AT = 0.0
 
@@ -267,41 +274,72 @@ def encode_frame(im):
 
 
 def capture_loop():
+    """Encode at the requested profile, keeping only the freshest compressed frame.
+
+    Capturing and encoding are serial; the stream threads cannot queue old captures.
+    Actual FPS is measured rather than inferred from the requested FPS.
+    """
     global FRAME_BYTES, FRAME_SEQ, CAPTURE_ERROR, CAPTURE_SOURCE
+    global CAPTURE_FPS, CAPTURE_ENCODE_MS, CAPTURE_WIDTH, CAPTURE_HEIGHT, FRAME_LAST_AT
+    count = 0
+    sample_started = time.perf_counter()
+
+    def publish(data, width, height, encoded_ms):
+        nonlocal count, sample_started
+        global FRAME_BYTES, FRAME_SEQ, CAPTURE_FPS, CAPTURE_ENCODE_MS
+        global CAPTURE_WIDTH, CAPTURE_HEIGHT, FRAME_LAST_AT
+        now = time.perf_counter()
+        count += 1
+        measured_fps = None
+        elapsed = now - sample_started
+        if elapsed >= 1.0:
+            measured_fps = count / elapsed
+            count = 0
+            sample_started = now
+        with FRAME_READY:
+            FRAME_BYTES = data
+            FRAME_SEQ += 1
+            CAPTURE_WIDTH, CAPTURE_HEIGHT = width, height
+            CAPTURE_ENCODE_MS = round(encoded_ms, 1)
+            FRAME_LAST_AT = time.monotonic()
+            if measured_fps is not None:
+                CAPTURE_FPS = round(measured_fps, 1)
+            FRAME_READY.notify_all()
+
     while True:
         started = time.perf_counter()
-        data = b''
         try:
-            if mss is not None:
-                with mss.mss() as sct:
-                    monitor = sct.monitors[1]
-                    while True:
-                        started = time.perf_counter()
-                        shot = sct.grab(monitor)
-                        im = Image.frombytes('RGB', shot.size, shot.rgb)
-                        data = encode_frame(im)
-                        with FRAME_LOCK:
-                            FRAME_BYTES = data
-                            FRAME_SEQ += 1
-                        CAPTURE_SOURCE = 'MSS'
-                        CAPTURE_ERROR = ''
-                        target = max(15, min(120, int(servermod.SCREEN_TARGET_FPS)))
-                        wait = (1.0 / target) - (time.perf_counter() - started)
-                        if wait > 0:
-                            time.sleep(wait)
-            else:
+            if mss is None:
                 raise RuntimeError('MSS indisponível')
+            with mss.mss() as sct:
+                monitor = sct.monitors[1]
+                while True:
+                    started = time.perf_counter()
+                    shot = sct.grab(monitor)
+                    # BGRX avoids the additional conversion/copy made by shot.rgb.
+                    try:
+                        im = Image.frombuffer('RGB', shot.size, shot.bgra, 'raw', 'BGRX', 0, 1)
+                    except (ValueError, TypeError):
+                        im = Image.frombytes('RGB', shot.size, shot.rgb)
+                    data = encode_frame(im)
+                    if data:
+                        publish(data, im.width, im.height, (time.perf_counter() - started) * 1000)
+                    CAPTURE_SOURCE = 'MSS'
+                    CAPTURE_ERROR = ''
+                    target = max(15, min(120, int(servermod.SCREEN_TARGET_FPS)))
+                    wait = (1.0 / target) - (time.perf_counter() - started)
+                    if wait > 0:
+                        time.sleep(wait)
         except Exception as e:
-            CAPTURE_ERROR = str(e)
+            CAPTURE_ERROR = str(e)[:200]
             CAPTURE_SOURCE = 'fallback'
+            started = time.perf_counter()
             try:
                 data = servermod.screenshot_original()
                 if data:
-                    with FRAME_LOCK:
-                        FRAME_BYTES = data
-                        FRAME_SEQ += 1
+                    publish(data, 0, 0, (time.perf_counter() - started) * 1000)
             except Exception as fallback_error:
-                CAPTURE_ERROR = f'{CAPTURE_ERROR}; fallback: {fallback_error}'
+                CAPTURE_ERROR = f'{CAPTURE_ERROR}; fallback: {fallback_error}'[:200]
             target = max(10, min(30, int(servermod.SCREEN_TARGET_FPS)))
             wait = (1.0 / target) - (time.perf_counter() - started)
             if wait > 0:
@@ -594,19 +632,28 @@ class CompanionHandler(servermod.H):
             data = fast_screenshot()
             return self.sendb(data, 'image/jpeg', 200 if data else 503)
         if path == '/stream/status':
-            with FRAME_LOCK:
+            with FRAME_READY:
                 seq = FRAME_SEQ
                 has_frame = bool(FRAME_BYTES)
+                actual_width, actual_height = CAPTURE_WIDTH, CAPTURE_HEIGHT
+                capture_fps, encode_ms = CAPTURE_FPS, CAPTURE_ENCODE_MS
+                age_ms = round((time.monotonic() - FRAME_LAST_AT) * 1000) if FRAME_LAST_AT else None
             payload = servermod.json.dumps({
-                'ok': has_frame,
+                'ok': has_frame and age_ms is not None and age_ms < 3000,
                 'seq': seq,
                 'source': CAPTURE_SOURCE,
                 'error': CAPTURE_ERROR,
-                'width': servermod.SCREEN_WIDTH,
-                'height': servermod.SCREEN_HEIGHT,
-                'fps': servermod.SCREEN_TARGET_FPS
+                'width': actual_width,
+                'height': actual_height,
+                'requested_width': servermod.SCREEN_WIDTH,
+                'requested_height': servermod.SCREEN_HEIGHT,
+                'target_fps': servermod.SCREEN_TARGET_FPS,
+                'actual_capture_fps': capture_fps,
+                'encode_ms': encode_ms,
+                'frame_age_ms': age_ms,
+                'jpeg_quality': servermod.SCREEN_QUALITY
             }).encode()
-            return self.sendb(payload, 'application/json', 200 if has_frame else 503)
+            return self.sendb(payload, 'application/json', 200 if has_frame and age_ms is not None and age_ms < 3000 else 503)
         if path != '/stream.raw':
             return super().do_GET()
 
@@ -626,29 +673,29 @@ class CompanionHandler(servermod.H):
         self.end_headers()
         self.close_connection = True
 
+        try:
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
+
         last_seq = -1
-        last_send = time.monotonic()
         try:
             while True:
-                with FRAME_LOCK:
-                    data = FRAME_BYTES
-                    seq = FRAME_SEQ
-                if data and seq != last_seq:
-                    self.wfile.write(struct.pack('>I', len(data)))
-                    self.wfile.write(data)
-                    self.wfile.flush()
-                    last_seq = seq
-                    last_send = time.monotonic()
-                elif time.monotonic() - last_send > 2.0:
-                    fallback = fast_screenshot()
-                    if fallback:
-                        self.wfile.write(struct.pack('>I', len(fallback)))
-                        self.wfile.write(fallback)
-                        self.wfile.flush()
-                        last_send = time.monotonic()
-                time.sleep(.002)
-        except Exception:
+                with FRAME_READY:
+                    if FRAME_SEQ == last_seq:
+                        FRAME_READY.wait(timeout=0.5)
+                    # Obtain the newest frame *after* the wait. Slow clients
+                    # skip old frames instead of growing a queue of stale video.
+                    data, seq = FRAME_BYTES, FRAME_SEQ
+                if not data or seq == last_seq:
+                    continue
+                self.wfile.write(struct.pack('>I', len(data)))
+                self.wfile.write(data)
+                self.wfile.flush()
+                last_seq = seq
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
             return
+
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
