@@ -35,20 +35,21 @@ private fun sendDocument(ctx: Context, uri: Uri, rawName: String, size: Long): B
     val name = rawName.replace(Regex("[\\r\\n/\\\\]"), "_").take(130)
     var c: HttpURLConnection? = null
     return try {
-        c = URL("http://${Api.host}:8765/upload/" + URLEncoder.encode(name, "UTF-8"))
+        val connection = URL("http://${Api.host}:8765/upload/" + URLEncoder.encode(name, "UTF-8"))
             .openConnection() as HttpURLConnection
-        c.requestMethod = "POST"
-        c.connectTimeout = 2500
-        c.readTimeout = 20000
-        c.doOutput = true
-        c.setFixedLengthStreamingMode(size)
-        c.setRequestProperty("Content-Type", "application/octet-stream")
+        c = connection
+        connection.requestMethod = "POST"
+        connection.connectTimeout = 2500
+        connection.readTimeout = 20000
+        connection.doOutput = true
+        connection.setFixedLengthStreamingMode(size)
+        connection.setRequestProperty("Content-Type", "application/octet-stream")
         ctx.contentResolver.openInputStream(uri)?.use { input ->
-            c.outputStream.use { output ->
+            connection.outputStream.use { output ->
                 input.copyTo(output, 65536)
             }
         } ?: return false
-        c.responseCode in 200..299
+        connection.responseCode in 200..299
     } catch (_: Exception) {
         false
     } finally {
