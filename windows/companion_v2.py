@@ -14,6 +14,8 @@ from PIL import Image, ImageDraw
 from recording_engine import PC_RECORDER, PHONE_RECORDER, unique_output
 from recording_dashboard import RecorderDashboard
 import audio_control
+from phone_control_bridge import BRIDGE
+from phone_control_dashboard import PhoneControlDashboard
 
 import json
 import entertainment_hub as entertainment
@@ -97,6 +99,7 @@ FRAME_LAST_AT = 0.0
 RECORDING = False
 RECORD_STARTED_AT = 0.0
 RECORDER_DASHBOARD = None
+PHONE_CONTROL_DASHBOARD = None
 PHONE_FRAME_LOCK = threading.Lock()
 PHONE_FRAME_BYTES = b''
 PHONE_FRAME_AT = 0.0
@@ -657,6 +660,14 @@ class CompanionHandler(servermod.H):
                 return self.entertainment_response({'error': 'Rota desconhecida'}, 404)
             except Exception as exc:
                 return self.entertainment_response({'error': str(exc)[:170]}, 400)
+        if path == '/phone/control/next':
+            if not self.entertainment_auth():
+                return
+            return self.entertainment_response(BRIDGE.next())
+        if path == '/phone/control/status':
+            if not self.entertainment_auth():
+                return
+            return self.entertainment_response(BRIDGE.status())
         if path == '/audio/status':
             if not self.entertainment_auth():
                 return
@@ -807,6 +818,22 @@ class CompanionHandler(servermod.H):
                 return self.entertainment_response(result)
             except Exception as exc:
                 return self.entertainment_response({'error': str(exc)[:170]}, 400)
+        if path in ('/phone/control/state','/phone/control/notification'):
+            if not self.entertainment_auth():
+                return
+            try:
+                if int(self.headers.get('Content-Length','0')) > 3000:
+                    return self.entertainment_response({'error':'Corpo grande'},413)
+                payload=json.loads(self.body())
+                if not isinstance(payload,dict):
+                    raise ValueError('JSON deve ser objeto')
+                if path == '/phone/control/state':
+                    BRIDGE.update_state(payload.get('volume'),payload.get('muted'),payload.get('enabled'))
+                else:
+                    BRIDGE.add_notice(payload.get('title',''),payload.get('text',''),payload.get('app',''))
+                return self.entertainment_response({'ok':True})
+            except (ValueError,TypeError):
+                return self.entertainment_response({'error':'Estado inválido'},400)
         if path == '/audio/set':
             if not self.entertainment_auth():
                 return
@@ -995,6 +1022,13 @@ def open_recorder_dashboard(icon=None, item=None):
         message('NEXUS', 'Painel ainda não está pronto.')
 
 
+def open_phone_dashboard(icon=None, item=None):
+    if edge is not None and PHONE_CONTROL_DASHBOARD is not None:
+        edge.root.after(0, PHONE_CONTROL_DASHBOARD.show)
+    else:
+        message('NEXUS','Painel indisponível')
+
+
 def open_phone_files(icon=None, item=None):
     ip = getattr(servermod, 'LAST_CLIENT', '') or ''
     if not ip:
@@ -1057,6 +1091,7 @@ def make_menu():
             toggle_autostart
         ),
         pystray.MenuItem('Gravar PC / Celular e tirar prints', open_recorder_dashboard),
+        pystray.MenuItem('Controle do celular (volume e notificações)', open_phone_dashboard),
         pystray.MenuItem('Abrir arquivos do celular', open_phone_files),
         pystray.MenuItem('Abrir Downloads', open_downloads),
         pystray.MenuItem('Mostrar código NEXUS Central', show_entertainment_key),
@@ -1103,6 +1138,7 @@ if __name__ == '__main__':
     RECORDER_DASHBOARD = RecorderDashboard(edge.root, capture_pc_image,
                                            phone_frame_snapshot, lambda: phone_frame_snapshot() is not None,
                                            set_phone_profile)
+    PHONE_CONTROL_DASHBOARD = PhoneControlDashboard(edge.root, open_phone_files)
     try:
         edge.run()
     finally:
