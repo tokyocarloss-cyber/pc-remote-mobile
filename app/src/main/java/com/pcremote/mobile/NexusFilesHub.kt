@@ -82,8 +82,8 @@ private fun PhoneSafExplorer(){
     val scope = rememberCoroutineScope()
     val prefs = remember { ctx.getSharedPreferences("nexus_files", Context.MODE_PRIVATE) }
     var tree by remember { mutableStateOf(prefs.getString("tree","").orEmpty()) }
-    var current by remember { mutableStateOf<Uri?>(null) }
-    var trail by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var current by remember { mutableStateOf<DocumentFile?>(null) }
+    var trail by remember { mutableStateOf<List<DocumentFile>>(emptyList()) }
     var entries by remember { mutableStateOf<List<DocumentFile>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
@@ -110,8 +110,7 @@ private fun PhoneSafExplorer(){
         entries=withContext(Dispatchers.IO){
             try{
                 val root=DocumentFile.fromTreeUri(ctx,Uri.parse(tree))
-                val folder=if(current==null)root
-                    else DocumentFile.fromTreeUri(ctx,current!!)
+                val folder=current ?: root
                 if(folder?.isDirectory!=true) emptyList()
                 else folder.listFiles().sortedWith(compareBy<DocumentFile>{!it.isDirectory}.thenBy{it.name?.lowercase()?:""})
             }catch(_:Exception){emptyList()}
@@ -120,14 +119,14 @@ private fun PhoneSafExplorer(){
     }
 
     fun openFolder(file:DocumentFile) {
-        val actual=current ?: Uri.parse(tree)
+        val actual=current ?: DocumentFile.fromTreeUri(ctx,Uri.parse(tree)) ?: return
         trail=trail + actual
-        current=file.uri
+        current=file
         search=""
     }
     fun goBack(){
         if(trail.isNotEmpty()){
-            current=trail.last().takeUnless{it.toString()==tree}
+            current=trail.last().takeUnless{it.uri.toString()==tree}
             trail=trail.dropLast(1)
         }else current=null
         search=""
