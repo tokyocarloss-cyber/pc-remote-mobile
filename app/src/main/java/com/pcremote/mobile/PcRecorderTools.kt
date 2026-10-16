@@ -5,6 +5,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,6 +23,8 @@ import org.json.JSONObject
 @Composable
 fun PcRecorderTools() {
     val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
+    var accessKey by remember { mutableStateOf(HubStore.key(ctx)) }
     var open by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf(false) }
@@ -34,7 +37,7 @@ fun PcRecorderTools() {
         scope.launch(Dispatchers.IO) {
             busy = true
             try {
-                val ok = RemoteClient.post(path, json.toString().toByteArray(Charsets.UTF_8))
+                val ok = RecorderClient.post(ctx, path, json.toString().toByteArray(Charsets.UTF_8))
                 if (ok) {
                     status = when (path) {
                         "/record/start" -> "Gravando tela do PC • salvo em Vídeos/NEXUS PC Remote"
@@ -43,7 +46,7 @@ fun PcRecorderTools() {
                     }
                     if (path == "/record/start") recording = true
                     if (path == "/record/stop") recording = false
-                } else status = "Falha ao comandar o gravador. Confira o companion Windows."
+                } else status = "Falha no gravador. Confira o código NEXUS Central e a conexão."
             } catch (e: Exception) {
                 status = "Erro: ${e.message}"
             } finally {
@@ -55,7 +58,7 @@ fun PcRecorderTools() {
     LaunchedEffect(Api.host) {
         while (isActive) {
             if (Api.host.isNotBlank()) {
-                val response = kotlinx.coroutines.withContext(Dispatchers.IO) { RemoteClient.get("/record/status", 1800) }
+                val response = kotlinx.coroutines.withContext(Dispatchers.IO) { RecorderClient.get(ctx, "/record/status") }
                 if (response != null) {
                     try {
                         val pc = JSONObject(String(response, Charsets.UTF_8)).getJSONObject("pc")
@@ -126,11 +129,19 @@ fun PcRecorderTools() {
                                 onClick = {jpegQuality=value}, label = {Text("$value")})
                         }
                     }
-                    Text("Formato AVI/MJPEG, sem áudio. O FPS gravado depende do desempenho real.",
+                    Text("Código NEXUS Central (veja no menu do PC)", style = MaterialTheme.typography.titleSmall)
+                    OutlinedTextField(
+                        value = accessKey,
+                        onValueChange = { accessKey = it.trim() },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Código de autorização") }
+                    )
+                    Text("Formato AVI/MJPEG, sem áudio. FPS real depende do desempenho.",
                         style = MaterialTheme.typography.bodySmall)
                 }
             },
-            confirmButton = { TextButton(onClick = { open = false }) { Text("PRONTO") } }
+            confirmButton = { TextButton(onClick = { HubStore.setKey(ctx, accessKey); open = false }) { Text("SALVAR") } }
         )
     }
 }
