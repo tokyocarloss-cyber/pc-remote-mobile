@@ -13,6 +13,7 @@ except Exception:
 from PIL import Image, ImageDraw
 from recording_engine import PC_RECORDER, PHONE_RECORDER, unique_output
 from recording_dashboard import RecorderDashboard
+import audio_control
 
 import json
 import entertainment_hub as entertainment
@@ -656,6 +657,13 @@ class CompanionHandler(servermod.H):
                 return self.entertainment_response({'error': 'Rota desconhecida'}, 404)
             except Exception as exc:
                 return self.entertainment_response({'error': str(exc)[:170]}, 400)
+        if path == '/audio/status':
+            if not self.entertainment_auth():
+                return
+            try:
+                return self.entertainment_response(audio_control.audio_state())
+            except Exception:
+                return self.entertainment_response({'available':False,'error':'Dispositivo de áudio indisponível'},503)
         if path == '/fs/list':
             q = urllib.parse.parse_qs(parsed.query)
             raw_path = q.get('path', [''])[0]
@@ -799,6 +807,21 @@ class CompanionHandler(servermod.H):
                 return self.entertainment_response(result)
             except Exception as exc:
                 return self.entertainment_response({'error': str(exc)[:170]}, 400)
+        if path == '/audio/set':
+            if not self.entertainment_auth():
+                return
+            try:
+                if int(self.headers.get('Content-Length','0')) > 1024:
+                    return self.entertainment_response({'error':'Payload longo'},413)
+                request = json.loads(self.body())
+                if not isinstance(request,dict):
+                    raise ValueError('JSON inválido')
+                result = audio_control.set_audio(percent=request.get('volume'), muted=request.get('muted'))
+                return self.entertainment_response(result)
+            except (ValueError,TypeError):
+                return self.entertainment_response({'error':'Volume ou mudo inválido'},400)
+            except Exception:
+                return self.entertainment_response({'available':False,'error':'Dispositivo de áudio indisponível'},503)
         if path.startswith('/upload/'):
             try:
                 raw = self.body()
