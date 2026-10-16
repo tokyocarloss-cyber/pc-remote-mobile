@@ -47,6 +47,7 @@ fun PhoneMirrorScreen() {
         ctx.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
     var status by remember { mutableStateOf("") }
+    var centralKey by remember { mutableStateOf(HubStore.key(ctx)) }
     val request=rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -70,8 +71,19 @@ fun PhoneMirrorScreen() {
                     style=MaterialTheme.typography.titleMedium)
                 Text("Mostre a tela Android no programa NEXUS para Windows. O Android sempre pedirá sua autorização antes de iniciar. Somente o PC pareado recebe as imagens.",
                     color=NexusUi.Muted,style=MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value=centralKey,
+                    onValueChange={centralKey=it},
+                    modifier=Modifier.fillMaxWidth(),
+                    singleLine=true,
+                    label={Text("Código NEXUS Central (menu do PC)")}
+                )
+                TextButton(onClick={
+                    HubStore.setKey(ctx,centralKey)
+                    status="Código de autorização salvo"
+                }){Text("SALVAR CÓDIGO")}
                 Button(
-                    enabled=Api.connected&&!PhoneMirrorService.active,
+                    enabled=Api.connected && HubStore.key(ctx).isNotBlank() && !PhoneMirrorService.active,
                     onClick={request.launch(manager.createScreenCaptureIntent())},
                     modifier=Modifier.fillMaxWidth()
                 ){Text("INICIAR ESPELHAMENTO")}
@@ -109,7 +121,7 @@ class PhoneMirrorService:Service(){
         if(now-lastSettingsCheck<1800)return
         lastSettingsCheck=now
         try{
-            val config=RemoteClient.get("/phone-screen/profile",1200) ?: return
+            val config=RecorderClient.get(this, "/phone-screen/profile") ?: return
             val json=JSONObject(String(config,Charsets.UTF_8))
             currentFps=json.optInt("fps",10).coerceIn(5,24)
             currentQuality=json.optInt("quality",75).coerceIn(55,90)
@@ -145,7 +157,7 @@ class PhoneMirrorService:Service(){
         val data=if(Build.VERSION.SDK_INT>=33)
             intent?.getParcelableExtra("projectionData",Intent::class.java)
             else intent?.getParcelableExtra("projectionData")
-        if(resultCode!=Activity.RESULT_OK || data==null || !Api.connected){
+        if(resultCode!=Activity.RESULT_OK || data==null || !Api.connected || HubStore.key(this).isBlank()){
             stopSelf();return START_NOT_STICKY
         }
         try{
@@ -196,7 +208,7 @@ class PhoneMirrorService:Service(){
                                         val output=ByteArrayOutputStream(400000)
                                         scaled.compress(Bitmap.CompressFormat.JPEG,currentQuality,output)
                                         if(output.size() in 128..2500000)
-                                            RemoteClient.post("/phone-screen/frame",output.toByteArray())
+                                            RecorderClient.post(this@PhoneMirrorService, "/phone-screen/frame", output.toByteArray())
                                     }finally{
                                         if(scaled!==cropped)scaled.recycle()
                                     }
