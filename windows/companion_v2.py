@@ -700,6 +700,8 @@ class CompanionHandler(servermod.H):
 
 
     def do_POST(self):
+        if not self.allow_local():
+            return
         path = urllib.parse.urlparse(self.path).path
         if path.startswith('/entertainment/'):
             if not self.entertainment_auth():
