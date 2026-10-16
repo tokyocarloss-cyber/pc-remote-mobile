@@ -17,6 +17,9 @@ class PhoneControlBridge:
         self.volume=None
         self.enabled=False
         self.muted=False
+        self.file_state={'folder':'root','parent':'','items':[],
+                         'error':'Escolha a pasta no Android', 'seq':0}
+        self.last_file=''
 
     def enqueue(self,kind,value):
         if kind=="volume":
@@ -25,6 +28,9 @@ class PhoneControlBridge:
         elif kind=="mute":
             if not isinstance(value,bool):
                 raise ValueError("Mute must be boolean")
+        elif kind in ("files_list","file_get"):
+            if not isinstance(value,str) or not 1<=len(value)<=96:
+                raise ValueError("Invalid file identifier")
         else:
             raise ValueError("Unsupported command")
         with self.lock:
@@ -51,6 +57,33 @@ class PhoneControlBridge:
             self.enabled=enabled
             if not enabled:
                 self.queue.clear()
+
+    def update_files(self,payload):
+        if not isinstance(payload,dict) or not isinstance(payload.get('items'),list):
+            raise ValueError('Invalid folder listing')
+        items=[]
+        for item in payload['items'][:300]:
+            if not isinstance(item,dict):
+                continue
+            ident=str(item.get('id',''))[:96]
+            if not ident:
+                continue
+            items.append({'id':ident,'name':str(item.get('name',''))[:180],
+                          'dir':bool(item.get('dir',False)),
+                          'size':max(0,int(item.get('size',0)))})
+        with self.lock:
+            self.file_state={'folder':str(payload.get('folder','root'))[:96],
+                             'parent':str(payload.get('parent',''))[:96],
+                             'items':items,'error':str(payload.get('error',''))[:150],
+                             'seq':self.file_state['seq']+1}
+
+    def files_snapshot(self):
+        with self.lock:
+            return dict(self.file_state)
+
+    def file_received(self,path):
+        with self.lock:
+            self.last_file=str(path)
 
     def add_notice(self,title,detail,app):
         def clean(s):
