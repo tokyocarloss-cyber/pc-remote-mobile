@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, full-redesign, 'nexus-v2-stability-sound-*', 'nexus-entertainment-*', 'nexus-streaming-*' ]
+    branches: [ main, full-redesign, 'nexus-v2-stability-sound-*', 'nexus-entertainment-*', 'nexus-streaming-*', 'nexus-unified-*' ]
   pull_request:
   workflow_dispatch:
 

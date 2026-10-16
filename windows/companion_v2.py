@@ -11,6 +11,8 @@ try:
 except Exception:
     mss = None
 from PIL import Image, ImageDraw
+from recording_engine import PC_RECORDER, PHONE_RECORDER, unique_output
+from recording_dashboard import RecorderDashboard
 
 import json
 import entertainment_hub as entertainment
@@ -93,6 +95,58 @@ CAPTURE_HEIGHT = 0
 FRAME_LAST_AT = 0.0
 RECORDING = False
 RECORD_STARTED_AT = 0.0
+RECORDER_DASHBOARD = None
+PHONE_FRAME_LOCK = threading.Lock()
+PHONE_FRAME_BYTES = b''
+PHONE_FRAME_AT = 0.0
+PHONE_PROFILE_LOCK = threading.Lock()
+PHONE_PROFILE = dict(width=1280, height=720, fps=10, quality=75)
+
+
+def phone_frame_snapshot():
+    with PHONE_FRAME_LOCK:
+        if time.monotonic() - PHONE_FRAME_AT > 3.0:
+            return None
+        return PHONE_FRAME_BYTES or None
+
+
+def get_phone_profile():
+    with PHONE_PROFILE_LOCK:
+        return PHONE_PROFILE.copy()
+
+
+def set_phone_profile(width, height, fps, quality):
+    from recording_engine import profile
+    width, height, fps, quality = profile(width, height, fps, quality)
+    with PHONE_PROFILE_LOCK:
+        PHONE_PROFILE.update(width=width, height=height, fps=fps, quality=quality)
+
+
+def capture_pc_image():
+    if mss is None:
+        from PIL import ImageGrab
+        return ImageGrab.grab().convert('RGB')
+    with mss.mss() as capture:
+        shot = capture.grab(capture.monitors[1])
+        # Clone the buffer while the MSS context is valid.
+        return Image.frombytes('RGB', shot.size, shot.rgb)
+
+
+def screenshot_to_file(device):
+    if device == 'phone':
+        data = phone_frame_snapshot()
+        if not data:
+            raise RuntimeError('Inicie o compartilhamento no Android primeiro')
+        with Image.open(io.BytesIO(data)) as frame:
+            picture = frame.convert('RGB')
+    elif device == 'pc':
+        picture = capture_pc_image()
+    else:
+        raise ValueError('Dispositivo inválido')
+    target = unique_output(device + '-print', 'png')
+    picture.save(target, 'PNG')
+    return str(target)
+
 
 
 def hidden_startup():
@@ -508,20 +562,12 @@ def queue_latest_recording():
 
 
 def toggle_recording():
-    global RECORDING, RECORD_STARTED_AT
-    u = ctypes.windll.user32
-    for vk in (0x5B, 0x12):
-        u.keybd_event(vk, 0, 0, 0)
-    u.keybd_event(0x52, 0, 0, 0); u.keybd_event(0x52, 0, 2, 0)
-    for vk in (0x12, 0x5B):
-        u.keybd_event(vk, 0, 2, 0)
-    if not RECORDING:
-        RECORDING = True
-        RECORD_STARTED_AT = time.time()
-        return 'started'
-    RECORDING = False
-    threading.Thread(target=queue_latest_recording, daemon=True, name='NexusRecordingQueue').start()
-    return 'stopped'
+    """Backwards-compatible control, now using actual AVI recording (not Game Bar)."""
+    if PC_RECORDER.status()['active']:
+        PC_RECORDER.stop()
+        return 'stopped'
+    PC_RECORDER.start(capture_pc_image, 'pc', 1280, 720, 30, 75)
+    return 'started'
 
 
 def send_hotkey(name):
@@ -630,6 +676,19 @@ class CompanionHandler(servermod.H):
                 return self.sendb(p.read_bytes(), 'application/octet-stream')
             except Exception as e:
                 return self.sendb(str(e).encode('utf-8'), code=404)
+        if path in ('/phone-screen/profile', '/phone-screen/status', '/record/status'):
+            if not entertainment.authenticated(self.headers.get('X-Nexus-Central-Key','')):
+                return self.sendb(b'Authorization required', code=401)
+        if path == '/phone-screen/profile':
+            return self.sendb(json.dumps(get_phone_profile()).encode('utf-8'), 'application/json')
+        if path == '/phone-screen/status':
+            with PHONE_FRAME_LOCK:
+                age_ms = round((time.monotonic()-PHONE_FRAME_AT)*1000) if PHONE_FRAME_AT else None
+            return self.sendb(json.dumps({'active': age_ms is not None and age_ms < 3000,
+                'age_ms': age_ms, 'recording': PHONE_RECORDER.status()}).encode('utf-8'), 'application/json')
+        if path == '/record/status':
+            return self.sendb(json.dumps({'pc': PC_RECORDER.status(),
+                'phone': PHONE_RECORDER.status(), 'phone_profile': get_phone_profile()}).encode('utf-8'), 'application/json')
         if path == '/capture.jpg':
             data = fast_screenshot()
             return self.sendb(data, 'image/jpeg', 200 if data else 503)
@@ -763,6 +822,57 @@ class CompanionHandler(servermod.H):
                 except Exception:
                     pass
                 return self.sendb(str(e).encode(), code=500)
+        if path in ('/phone-screen/frame', '/record/start', '/record/stop',
+                    '/record/screenshot', '/record-toggle'):
+            if not entertainment.authenticated(self.headers.get('X-Nexus-Central-Key','')):
+                return self.sendb(b'Authorization required', code=401)
+        if path == '/phone-screen/frame':
+            global PHONE_FRAME_BYTES, PHONE_FRAME_AT
+            try:
+                if self.headers.get('Transfer-Encoding'):
+                    return self.sendb(b'Explicit frame size required', code=400)
+                length = int(self.headers.get('Content-Length', '-1'))
+                if not 128 <= length <= 2500000:
+                    return self.sendb(b'Invalid JPEG length', code=413)
+                frame = self.rfile.read(length)
+                if len(frame) != length or not frame.startswith(b'\xff\xd8') or not frame.endswith(b'\xff\xd9'):
+                    return self.sendb(b'Invalid JPEG', code=400)
+                with PHONE_FRAME_LOCK:
+                    PHONE_FRAME_BYTES = frame
+                    PHONE_FRAME_AT = time.monotonic()
+                servermod.mark_seen(self.client_address[0])
+                return self.sendb(b'OK')
+            except Exception:
+                return self.sendb(b'Invalid phone frame', code=400)
+        if path in ('/record/start', '/record/stop', '/record/screenshot'):
+            try:
+                raw = self.body()
+                data = json.loads(raw or b'{}')
+                device = str(data.get('device', 'pc'))
+                if device not in ('pc', 'phone'):
+                    return self.sendb(b'Unknown device', code=400)
+                manager = PC_RECORDER if device == 'pc' else PHONE_RECORDER
+                if path == '/record/screenshot':
+                    payload = {'path': screenshot_to_file(device)}
+                elif path == '/record/stop':
+                    payload = manager.stop()
+                else:
+                    if device == 'phone':
+                        cfg = get_phone_profile()
+                        width, height = int(data.get('width', cfg['width'])), int(data.get('height', cfg['height']))
+                        fps, quality = int(data.get('fps', cfg['fps'])), int(data.get('quality', cfg['quality']))
+                        set_phone_profile(width, height, fps, quality)
+                    else:
+                        width, height = int(data.get('width', 1280)), int(data.get('height', 720))
+                        fps, quality = int(data.get('fps', 30)), int(data.get('quality', 75))
+                    path_on_disk = manager.start(capture_pc_image if device == 'pc' else phone_frame_snapshot,
+                                                 device, width, height, fps, quality)
+                    payload = {'path': path_on_disk, 'active': True}
+                return self.sendb(json.dumps(payload).encode('utf-8'), 'application/json')
+            except (RuntimeError, ValueError, TypeError) as error:
+                return self.sendb(json.dumps({'error': str(error)}).encode('utf-8'), 'application/json', 400)
+            except Exception as error:
+                return self.sendb(json.dumps({'error': str(error)}).encode('utf-8'), 'application/json', 500)
         if path == '/record-toggle':
             servermod.mark_seen(self.client_address[0])
             try:
@@ -855,6 +965,13 @@ def open_downloads(icon=None, item=None):
     os.startfile(str(RECEIVED_DIR))
 
 
+def open_recorder_dashboard(icon=None, item=None):
+    if edge is not None and RECORDER_DASHBOARD is not None:
+        edge.root.after(0, RECORDER_DASHBOARD.show)
+    else:
+        message('NEXUS', 'Painel ainda não está pronto.')
+
+
 def open_phone_files(icon=None, item=None):
     ip = getattr(servermod, 'LAST_CLIENT', '') or ''
     if not ip:
@@ -869,6 +986,8 @@ def open_phone_files(icon=None, item=None):
 
 def stop(icon=None, item=None):
     global server
+    PC_RECORDER.stop()
+    PHONE_RECORDER.stop()
     try:
         if server:
             server.shutdown()
@@ -914,6 +1033,7 @@ def make_menu():
             lambda _: 'Iniciar com o Windows: ativado' if autostart_enabled() else 'Iniciar com o Windows: desativado',
             toggle_autostart
         ),
+        pystray.MenuItem('Gravar PC / Celular e tirar prints', open_recorder_dashboard),
         pystray.MenuItem('Abrir arquivos do celular', open_phone_files),
         pystray.MenuItem('Abrir Downloads', open_downloads),
         pystray.MenuItem('Mostrar código NEXUS Central', show_entertainment_key),
@@ -957,6 +1077,9 @@ if __name__ == '__main__':
     first_run_autostart_prompt()
     start_services(); start_tray()
     edge = DropEdge()
+    RECORDER_DASHBOARD = RecorderDashboard(edge.root, capture_pc_image,
+                                           phone_frame_snapshot, lambda: phone_frame_snapshot() is not None,
+                                           set_phone_profile)
     try:
         edge.run()
     finally:
