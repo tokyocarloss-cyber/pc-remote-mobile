@@ -75,7 +75,8 @@ private val v2Extra = listOf(
     V2Nav(10,"Cinema",Icons.Default.Movie),
     V2Nav(11,"Jogos",Icons.Default.SportsEsports),
     V2Nav(7,"Configurações",Icons.Default.Settings),
-    V2Nav(9,"Flow",Icons.Default.AutoAwesome)
+    V2Nav(9,"Flow",Icons.Default.AutoAwesome),
+    V2Nav(13,"Celular → PC",Icons.Default.Smartphone)
 )
 
 private fun themeMotionMs(): Int = when (NexusUi.currentTheme) {
