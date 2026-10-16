@@ -41,6 +41,8 @@ jobs:
           --collect-all pystray
           --collect-all PIL
           --collect-all mss
+          --collect-all pycaw
+          --collect-all comtypes
           --hidden-import pystray._win32
           --hidden-import pystray._base
           companion_v2.py
