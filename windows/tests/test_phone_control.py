@@ -36,6 +36,25 @@ class ControlTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 bridge.enqueue(kind,value)
 
+    def test_file_requests_and_listing_validation(self):
+        bridge=PhoneControlBridge()
+        bridge.update_state(50,False,True)
+        bridge.enqueue("files_list","root")
+        self.assertEqual(bridge.next(),{"action":"files_list","value":"root"})
+        bridge.update_files({"folder":"root","parent":"","items":[
+            {"id":"id-1","name":"Documentos","dir":True,"size":0},
+            {"id":"id-2","name":"foto.jpg","dir":False,"size":1000}]})
+        snapshot=bridge.files_snapshot()
+        self.assertEqual(snapshot["seq"],1)
+        self.assertEqual(len(snapshot["items"]),2)
+        bridge.enqueue("file_get","id-2")
+        self.assertEqual(bridge.next(),{"action":"file_get","value":"id-2"})
+        for bad in ("", "x"*97):
+            with self.assertRaises(ValueError):
+                bridge.enqueue("file_get",bad)
+        with self.assertRaises(ValueError):
+            bridge.update_files({"items":"not a list"})
+
     def test_notifications_capped(self):
         bridge=PhoneControlBridge()
         for n in range(50):
