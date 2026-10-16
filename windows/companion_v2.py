@@ -660,6 +660,11 @@ class CompanionHandler(servermod.H):
                 return self.entertainment_response({'error': 'Rota desconhecida'}, 404)
             except Exception as exc:
                 return self.entertainment_response({'error': str(exc)[:170]}, 400)
+
+        if path == '/phone/files/status':
+            if not self.entertainment_auth():
+                return
+            return self.entertainment_response(BRIDGE.files_snapshot())
         if path == '/phone/control/next':
             if not self.entertainment_auth():
                 return
@@ -818,7 +823,48 @@ class CompanionHandler(servermod.H):
                 return self.entertainment_response(result)
             except Exception as exc:
                 return self.entertainment_response({'error': str(exc)[:170]}, 400)
-        if path in ('/phone/control/state','/phone/control/notification'):
+        if path.startswith('/phone/files/upload/'):
+            if not self.entertainment_auth():
+                return
+            part=None
+            try:
+                if self.headers.get('Transfer-Encoding'):
+                    raise ValueError('Unknown transfer length')
+                length=int(self.headers.get('Content-Length','-1'))
+                if not 1 <= length <= 268435456:
+                    raise ValueError('Invalid upload length')
+                name=Path(urllib.parse.unquote(path.split('/phone/files/upload/',1)[1])).name
+                if not name or name in ('.','..') or '\x00' in name:
+                    raise ValueError('Invalid upload name')
+                destination=(Path.home()/'Downloads'/'NEXUS From Phone')
+                destination.mkdir(parents=True,exist_ok=True)
+                target=destination/name
+                stem,suffix=target.stem,target.suffix
+                counter=1
+                while target.exists():
+                    target=destination/f'{stem}_{counter}{suffix}'
+                    counter+=1
+                part=target.with_name(target.name+'.nexus-part')
+                with part.open('xb') as writer:
+                    remaining=length
+                    while remaining:
+                        data=self.rfile.read(min(65536,remaining))
+                        if not data:
+                            raise ValueError('Incomplete transfer')
+                        writer.write(data)
+                        remaining-=len(data)
+                    writer.flush()
+                    os.fsync(writer.fileno())
+                part.rename(target)
+                BRIDGE.file_received(target)
+                return self.entertainment_response({'ok':True, 'name':target.name})
+            except (ValueError, OSError) as error:
+                return self.entertainment_response({'error':str(error)[:150]},400)
+            finally:
+                if part is not None and part.exists():
+                    part.unlink(missing_ok=True)
+        if path in ('/phone/control/state','/phone/control/notification',
+                    '/phone/files/state'):
             if not self.entertainment_auth():
                 return
             try:
@@ -829,6 +875,8 @@ class CompanionHandler(servermod.H):
                     raise ValueError('JSON deve ser objeto')
                 if path == '/phone/control/state':
                     BRIDGE.update_state(payload.get('volume'),payload.get('muted'),payload.get('enabled'))
+                elif path == '/phone/files/state':
+                    BRIDGE.update_files(payload)
                 else:
                     BRIDGE.add_notice(payload.get('title',''),payload.get('text',''),payload.get('app',''))
                 return self.entertainment_response({'ok':True})
