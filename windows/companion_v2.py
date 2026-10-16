@@ -676,6 +676,9 @@ class CompanionHandler(servermod.H):
                 return self.sendb(p.read_bytes(), 'application/octet-stream')
             except Exception as e:
                 return self.sendb(str(e).encode('utf-8'), code=404)
+        if path in ('/phone-screen/profile', '/phone-screen/status', '/record/status'):
+            if not entertainment.authenticated(self.headers.get('X-Nexus-Central-Key','')):
+                return self.sendb(b'Authorization required', code=401)
         if path == '/phone-screen/profile':
             return self.sendb(json.dumps(get_phone_profile()).encode('utf-8'), 'application/json')
         if path == '/phone-screen/status':
@@ -819,6 +822,10 @@ class CompanionHandler(servermod.H):
                 except Exception:
                     pass
                 return self.sendb(str(e).encode(), code=500)
+        if path in ('/phone-screen/frame', '/record/start', '/record/stop',
+                    '/record/screenshot', '/record-toggle'):
+            if not entertainment.authenticated(self.headers.get('X-Nexus-Central-Key','')):
+                return self.sendb(b'Authorization required', code=401)
         if path == '/phone-screen/frame':
             global PHONE_FRAME_BYTES, PHONE_FRAME_AT
             try:
