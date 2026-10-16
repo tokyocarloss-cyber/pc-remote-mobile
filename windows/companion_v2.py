@@ -13,6 +13,10 @@ except Exception:
 from PIL import Image, ImageDraw
 from recording_engine import PC_RECORDER, PHONE_RECORDER, unique_output
 from recording_dashboard import RecorderDashboard
+import audio_control
+from phone_control_bridge import BRIDGE
+from phone_control_dashboard import PhoneControlDashboard
+from phone_files_dashboard import PhoneFilesDashboard
 
 import json
 import entertainment_hub as entertainment
@@ -96,6 +100,8 @@ FRAME_LAST_AT = 0.0
 RECORDING = False
 RECORD_STARTED_AT = 0.0
 RECORDER_DASHBOARD = None
+PHONE_CONTROL_DASHBOARD = None
+PHONE_FILES_DASHBOARD = None
 PHONE_FRAME_LOCK = threading.Lock()
 PHONE_FRAME_BYTES = b''
 PHONE_FRAME_AT = 0.0
@@ -656,6 +662,26 @@ class CompanionHandler(servermod.H):
                 return self.entertainment_response({'error': 'Rota desconhecida'}, 404)
             except Exception as exc:
                 return self.entertainment_response({'error': str(exc)[:170]}, 400)
+
+        if path == '/phone/files/status':
+            if not self.entertainment_auth():
+                return
+            return self.entertainment_response(BRIDGE.files_snapshot())
+        if path == '/phone/control/next':
+            if not self.entertainment_auth():
+                return
+            return self.entertainment_response(BRIDGE.next())
+        if path == '/phone/control/status':
+            if not self.entertainment_auth():
+                return
+            return self.entertainment_response(BRIDGE.status())
+        if path == '/audio/status':
+            if not self.entertainment_auth():
+                return
+            try:
+                return self.entertainment_response(audio_control.audio_state())
+            except Exception:
+                return self.entertainment_response({'available':False,'error':'Dispositivo de áudio indisponível'},503)
         if path == '/fs/list':
             q = urllib.parse.parse_qs(parsed.query)
             raw_path = q.get('path', [''])[0]
@@ -799,6 +825,80 @@ class CompanionHandler(servermod.H):
                 return self.entertainment_response(result)
             except Exception as exc:
                 return self.entertainment_response({'error': str(exc)[:170]}, 400)
+        if path.startswith('/phone/files/upload/'):
+            if not self.entertainment_auth():
+                return
+            part=None
+            try:
+                if self.headers.get('Transfer-Encoding'):
+                    raise ValueError('Unknown transfer length')
+                length=int(self.headers.get('Content-Length','-1'))
+                if not 1 <= length <= 268435456:
+                    raise ValueError('Invalid upload length')
+                name=Path(urllib.parse.unquote(path.split('/phone/files/upload/',1)[1])).name
+                if not name or name in ('.','..') or '\x00' in name:
+                    raise ValueError('Invalid upload name')
+                destination=(Path.home()/'Downloads'/'NEXUS From Phone')
+                destination.mkdir(parents=True,exist_ok=True)
+                target=destination/name
+                stem,suffix=target.stem,target.suffix
+                counter=1
+                while target.exists():
+                    target=destination/f'{stem}_{counter}{suffix}'
+                    counter+=1
+                part=target.with_name(target.name+'.nexus-part')
+                with part.open('xb') as writer:
+                    remaining=length
+                    while remaining:
+                        data=self.rfile.read(min(65536,remaining))
+                        if not data:
+                            raise ValueError('Incomplete transfer')
+                        writer.write(data)
+                        remaining-=len(data)
+                    writer.flush()
+                    os.fsync(writer.fileno())
+                part.rename(target)
+                BRIDGE.file_received(target)
+                return self.entertainment_response({'ok':True, 'name':target.name})
+            except (ValueError, OSError) as error:
+                return self.entertainment_response({'error':str(error)[:150]},400)
+            finally:
+                if part is not None and part.exists():
+                    part.unlink(missing_ok=True)
+        if path in ('/phone/control/state','/phone/control/notification',
+                    '/phone/files/state'):
+            if not self.entertainment_auth():
+                return
+            try:
+                if int(self.headers.get('Content-Length','0')) > 3000:
+                    return self.entertainment_response({'error':'Corpo grande'},413)
+                payload=json.loads(self.body())
+                if not isinstance(payload,dict):
+                    raise ValueError('JSON deve ser objeto')
+                if path == '/phone/control/state':
+                    BRIDGE.update_state(payload.get('volume'),payload.get('muted'),payload.get('enabled'))
+                elif path == '/phone/files/state':
+                    BRIDGE.update_files(payload)
+                else:
+                    BRIDGE.add_notice(payload.get('title',''),payload.get('text',''),payload.get('app',''))
+                return self.entertainment_response({'ok':True})
+            except (ValueError,TypeError):
+                return self.entertainment_response({'error':'Estado inválido'},400)
+        if path == '/audio/set':
+            if not self.entertainment_auth():
+                return
+            try:
+                if int(self.headers.get('Content-Length','0')) > 1024:
+                    return self.entertainment_response({'error':'Payload longo'},413)
+                request = json.loads(self.body())
+                if not isinstance(request,dict):
+                    raise ValueError('JSON inválido')
+                result = audio_control.set_audio(percent=request.get('volume'), muted=request.get('muted'))
+                return self.entertainment_response(result)
+            except (ValueError,TypeError):
+                return self.entertainment_response({'error':'Volume ou mudo inválido'},400)
+            except Exception:
+                return self.entertainment_response({'available':False,'error':'Dispositivo de áudio indisponível'},503)
         if path.startswith('/upload/'):
             try:
                 raw = self.body()
@@ -972,6 +1072,20 @@ def open_recorder_dashboard(icon=None, item=None):
         message('NEXUS', 'Painel ainda não está pronto.')
 
 
+def open_phone_dashboard(icon=None, item=None):
+    if edge is not None and PHONE_CONTROL_DASHBOARD is not None:
+        edge.root.after(0, PHONE_CONTROL_DASHBOARD.show)
+    else:
+        message('NEXUS','Painel indisponível')
+
+
+def open_phone_files_dashboard(icon=None,item=None):
+    if edge is not None and PHONE_FILES_DASHBOARD is not None:
+        edge.root.after(0,PHONE_FILES_DASHBOARD.show)
+    else:
+        message("NEXUS","Painel de arquivos ainda não iniciado.")
+
+
 def open_phone_files(icon=None, item=None):
     ip = getattr(servermod, 'LAST_CLIENT', '') or ''
     if not ip:
@@ -1034,7 +1148,8 @@ def make_menu():
             toggle_autostart
         ),
         pystray.MenuItem('Gravar PC / Celular e tirar prints', open_recorder_dashboard),
-        pystray.MenuItem('Abrir arquivos do celular', open_phone_files),
+        pystray.MenuItem('Controle do celular (volume e notificações)', open_phone_dashboard),
+        pystray.MenuItem('Arquivos do celular (pastas autorizadas)', open_phone_files_dashboard),
         pystray.MenuItem('Abrir Downloads', open_downloads),
         pystray.MenuItem('Mostrar código NEXUS Central', show_entertainment_key),
         pystray.MenuItem('Copiar código NEXUS Central', copy_entertainment_key),
@@ -1080,6 +1195,8 @@ if __name__ == '__main__':
     RECORDER_DASHBOARD = RecorderDashboard(edge.root, capture_pc_image,
                                            phone_frame_snapshot, lambda: phone_frame_snapshot() is not None,
                                            set_phone_profile)
+    PHONE_FILES_DASHBOARD = PhoneFilesDashboard(edge.root)
+    PHONE_CONTROL_DASHBOARD = PhoneControlDashboard(edge.root, open_phone_files_dashboard)
     try:
         edge.run()
     finally:

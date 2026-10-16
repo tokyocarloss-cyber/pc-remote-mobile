@@ -1,7 +1,7 @@
 name: Build Windows Companion
 on:
   push:
-    branches: [full-redesign, 'nexus-v2-stability-sound-*', 'nexus-entertainment-*', 'nexus-streaming-*', 'nexus-unified-*']
+    branches: [full-redesign, 'nexus-v2-stability-sound-*', 'nexus-entertainment-*', 'nexus-streaming-*', 'nexus-unified-*', 'nexus-17-*']
     paths:
       - "windows/**"
       - ".github/workflows/build-windows.yml"
@@ -41,6 +41,8 @@ jobs:
           --collect-all pystray
           --collect-all PIL
           --collect-all mss
+          --collect-all pycaw
+          --collect-all comtypes
           --hidden-import pystray._win32
           --hidden-import pystray._base
           companion_v2.py
