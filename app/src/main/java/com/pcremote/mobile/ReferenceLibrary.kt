@@ -423,8 +423,8 @@ private fun RadialLauncherDialog(
                 BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     val diameter = if (maxWidth < maxHeight) maxWidth else maxHeight
                     val ringSize = diameter * .94f
-                    val radius = diameter * .36f
-                    val itemSize = 68.dp
+                    val itemSize = (ringSize * .19f).coerceIn(45.dp, 68.dp)
+                    val radius = ringSize * .36f
                     val centerRadiusFraction = .22f
 
                     Box(
@@ -509,8 +509,10 @@ private fun RadialLauncherDialog(
 
                         slots.forEachIndexed { index, app ->
                             val angle = -PI / 2.0 + 2.0 * PI * index / slots.size
-                            val x = ringSize / 2 + radius * cos(angle).toFloat() - itemSize / 2
-                            val y = ringSize / 2 + radius * sin(angle).toFloat() - itemSize / 2
+                            // Parent Box uses Alignment.Center, so offsets must be
+                            // relative to the center, NOT relative to its top-left.
+                            val x = radius * cos(angle).toFloat()
+                            val y = radius * sin(angle).toFloat()
                             val itemScale by animateFloatAsState(if (selected == index) 1.18f else 1f, tween(120), label = "radialItem$index")
                             Column(Modifier.offset(x, y).width(itemSize).scale(itemScale), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Surface(
