@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.os.Build
@@ -29,6 +30,12 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import org.json.JSONArray
+import androidx.documentfile.provider.DocumentFile
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
@@ -107,6 +114,7 @@ class PhoneControlService:Service(){
         const val STOP="com.pcremote.mobile.STOP_CONTROL"
     }
     private val running=AtomicBoolean(false)
+    private val fileRelay by lazy { PhoneFileRelay(this) }
     private var worker:Thread?=null
     override fun onBind(intent:Intent?):IBinder?=null
 
@@ -136,6 +144,8 @@ class PhoneControlService:Service(){
                 audio.adjustStreamVolume(AudioManager.STREAM_MUSIC,
                     if(bool)AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE,0)
             }
+            "files_list" -> fileRelay.list(json.optString("value","root"))
+            "file_get" -> fileRelay.download(json.optString("value",""))
         }
     }
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
@@ -177,6 +187,108 @@ class PhoneControlService:Service(){
         getSharedPreferences("nexus_phone_control",MODE_PRIVATE).edit().putBoolean("enabled",false).apply()
         worker?.interrupt()
         super.onDestroy()
+    }
+}
+
+
+/**
+ * Only the tree selected by the user in Arquivos > Celular is addressable.
+ * File handles are temporary opaque IDs and are forgotten with the service.
+ * No inbound file server is started on the Android device.
+ */
+private class PhoneFileRelay(private val ctx:Context) {
+    private val nodes=mutableMapOf<String,DocumentFile>()
+    private val parents=mutableMapOf<String,String>()
+    private var savedTree=""
+
+    private fun root():DocumentFile?{
+        val tree=ctx.getSharedPreferences("nexus_files",Context.MODE_PRIVATE)
+            .getString("tree","").orEmpty()
+        if(tree.isBlank())return null
+        if(savedTree!=tree || nodes["root"]==null){
+            nodes.clear()
+            parents.clear()
+            savedTree=tree
+            try{
+                val dir=DocumentFile.fromTreeUri(ctx,Uri.parse(tree)) ?: return null
+                if(!dir.isDirectory)return null
+                nodes["root"]=dir
+                parents["root"]=""
+            }catch(_:Exception){return null}
+        }
+        return nodes["root"]
+    }
+
+    private fun publish(id:String,parent:String,entries:JSONArray,error:String=""){
+        val state=JSONObject().put("folder",id).put("parent",parent)
+            .put("items",entries).put("error",error)
+        RecorderClient.post(ctx,"/phone/files/state",state.toString().toByteArray())
+    }
+
+    fun list(id:String){
+        try{
+            val root=root()
+            if(root==null){
+                publish("root","",JSONArray(),"Escolha uma pasta em Arquivos > Celular no Android")
+                return
+            }
+            val folder=nodes[id]
+            if(folder==null || !folder.isDirectory){
+                publish("root","",JSONArray(),"Pasta não disponível. Volte ao início.")
+                return
+            }
+            val entries=JSONArray()
+            val files=folder.listFiles()
+                .sortedWith(compareBy<DocumentFile>{!it.isDirectory}.thenBy{it.name.orEmpty().lowercase()})
+                .take(250)
+            if(nodes.size>3000){
+                nodes.keys.removeAll { it!="root" }
+                parents.keys.removeAll { it!="root" }
+            }
+            for(item in files){
+                val token=UUID.randomUUID().toString()
+                nodes[token]=item
+                parents[token]=id
+                entries.put(JSONObject().put("id",token).put("name",item.name.orEmpty())
+                    .put("dir",item.isDirectory).put("size",if(item.isFile)item.length() else 0))
+            }
+            publish(id,parents[id].orEmpty(),entries)
+        }catch(_:Exception){
+            publish(id,parents[id].orEmpty(),JSONArray(),"Falha ao ler esta pasta")
+        }
+    }
+
+    fun download(token:String){
+        try{
+            if(root()==null)return
+            val doc=nodes[token] ?: return
+            if(!doc.isFile)return
+            val size=doc.length()
+            if(size !in 1L..268435456L){
+                publish(parents[token].orEmpty(),"",JSONArray(),
+                    "Arquivo vazio ou excede o limite de 256 MB")
+                return
+            }
+            val name=doc.name.orEmpty().replace(Regex("[\\r\\n/\\\\]"),"_").take(130)
+            val key=HubStore.key(ctx)
+            if(key.isBlank())return
+            val conn=URL("http://${Api.host}:8765/phone/files/upload/" +
+                URLEncoder.encode(name,"UTF-8")).openConnection() as HttpURLConnection
+            try{
+                conn.requestMethod="POST"
+                conn.connectTimeout=2500
+                conn.readTimeout=30000
+                conn.doOutput=true
+                conn.setFixedLengthStreamingMode(size)
+                conn.setRequestProperty("X-Nexus-Central-Key",key)
+                ctx.contentResolver.openInputStream(doc.uri)?.use { source ->
+                    conn.outputStream.use { output -> source.copyTo(output,65536) }
+                } ?: return
+                if(conn.responseCode !in 200..299){
+                    publish(parents[token].orEmpty(),"",JSONArray(),"Não foi possível enviar ao Windows")
+                }
+            }finally{conn.disconnect()}
+        }catch(_:Exception){}
     }
 }
 
