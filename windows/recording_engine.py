@@ -36,7 +36,7 @@ class MjpegAviWriter:
     def __init__(self, target, width, height, fps):
         self.path = Path(target)
         self.width, self.height, self.fps = int(width), int(height), int(fps)
-        self.handle = self.path.open("wb")
+        self.handle = self.path.open("w+b")
         self.index = []
         self.frames = 0
         self.closed = False
