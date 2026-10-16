@@ -76,7 +76,8 @@ private val v2Extra = listOf(
     V2Nav(11,"Jogos",Icons.Default.SportsEsports),
     V2Nav(7,"Configurações",Icons.Default.Settings),
     V2Nav(9,"Flow",Icons.Default.AutoAwesome),
-    V2Nav(13,"Celular → PC",Icons.Default.Smartphone)
+    V2Nav(13,"Celular → PC",Icons.Default.Smartphone),
+    V2Nav(14,"Controle do celular",Icons.Default.PhonelinkSetup)
 )
 
 private fun themeMotionMs(): Int = when (NexusUi.currentTheme) {
@@ -200,6 +201,7 @@ private fun V2Page(page:Int,go:(Int)->Unit){
         11->EntertainmentHub(games=true)
         12->V2Shortcuts(go)
         13->PhoneMirrorScreen()
+        14->PhoneControlScreen()
         else->V2Home(go)
     }
 }
@@ -227,7 +229,7 @@ private fun V2BottomNav(selected:Int,setPage:(Int)->Unit){
         Row(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=5.dp)){
             v2Primary.forEach{item->V2NavItem(item,selected==item.page,Modifier.weight(1f)){setPage(item.page)}}
             Box(Modifier.weight(1f)){
-                V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(3,4,5,6,7,8,9,10,11,13),Modifier.fillMaxWidth()){more=true}
+                V2NavItem(V2Nav(-1,"Mais",Icons.Default.MoreHoriz),selected in setOf(3,4,5,6,7,8,9,10,11,13,14),Modifier.fillMaxWidth()){more=true}
                 DropdownMenu(expanded=more,onDismissRequest={more=false},containerColor=NexusUi.PanelRaised,shape=RoundedCornerShape(NexusUi.cardRadius.dp)){
                     v2Extra.forEach{item->DropdownMenuItem(text={Text(item.label,color=NexusUi.Text)},leadingIcon={Icon(item.icon,null,tint=if(selected==item.page)NexusUi.Accent else NexusUi.Muted)},onClick={more=false;setPage(item.page)})}
                 }
