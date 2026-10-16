@@ -253,6 +253,8 @@ fun SmoothLiveScreen() {
                     }
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            PcRecorderTools()
             Spacer(Modifier.height(9.dp))
         }
 
@@ -334,7 +336,16 @@ fun SmoothLiveScreen() {
                             Row(Modifier.padding(6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
                                 EdgeShortcut("ALT F4", Icons.Default.Close) { hotkey("ALT_F4") }
                                 EdgeShortcut("ALT TAB", Icons.Default.SwapHoriz) { hotkey("ALT_TAB") }
+                                EdgeShortcut("REC", Icons.Default.FiberManualRecord) {
+                                    scope.launch(Dispatchers.IO) { Api.post("/record-toggle", "") }
+                                }
                                 EdgeShortcut("PRINT", Icons.Default.CropFree) { hotkey("SNIP") }
+                                EdgeShortcut("SALVAR", Icons.Default.Screenshot) {
+                                    scope.launch(Dispatchers.IO) {
+                                        RemoteClient.post("/record/screenshot",
+                                            """{"device":"pc"}""".toByteArray())
+                                    }
+                                }
                                 EdgeShortcut("WIN D", Icons.Default.DesktopWindows) { hotkey("WIN_D") }
                                 EdgeShortcut(if (controlsVisible) "CTRL ON" else "CTRL", Icons.Default.SportsEsports) {
                                     controlsVisible = !controlsVisible
