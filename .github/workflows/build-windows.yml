@@ -1,7 +1,7 @@
 name: Build Windows Companion
 on:
   push:
-    branches: [full-redesign, 'nexus-v2-stability-sound-*', 'nexus-entertainment-*']
+    branches: [full-redesign, 'nexus-v2-stability-sound-*', 'nexus-entertainment-*', 'nexus-streaming-*']
     paths:
       - "windows/**"
       - ".github/workflows/build-windows.yml"
