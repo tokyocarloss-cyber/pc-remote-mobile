@@ -16,6 +16,7 @@ from recording_dashboard import RecorderDashboard
 import audio_control
 from phone_control_bridge import BRIDGE
 from phone_control_dashboard import PhoneControlDashboard
+from phone_files_dashboard import PhoneFilesDashboard
 
 import json
 import entertainment_hub as entertainment
@@ -100,6 +101,7 @@ RECORDING = False
 RECORD_STARTED_AT = 0.0
 RECORDER_DASHBOARD = None
 PHONE_CONTROL_DASHBOARD = None
+PHONE_FILES_DASHBOARD = None
 PHONE_FRAME_LOCK = threading.Lock()
 PHONE_FRAME_BYTES = b''
 PHONE_FRAME_AT = 0.0
@@ -1077,6 +1079,13 @@ def open_phone_dashboard(icon=None, item=None):
         message('NEXUS','Painel indisponível')
 
 
+def open_phone_files_dashboard(icon=None,item=None):
+    if edge is not None and PHONE_FILES_DASHBOARD is not None:
+        edge.root.after(0,PHONE_FILES_DASHBOARD.show)
+    else:
+        message("NEXUS","Painel de arquivos ainda não iniciado.")
+
+
 def open_phone_files(icon=None, item=None):
     ip = getattr(servermod, 'LAST_CLIENT', '') or ''
     if not ip:
@@ -1140,7 +1149,7 @@ def make_menu():
         ),
         pystray.MenuItem('Gravar PC / Celular e tirar prints', open_recorder_dashboard),
         pystray.MenuItem('Controle do celular (volume e notificações)', open_phone_dashboard),
-        pystray.MenuItem('Abrir arquivos do celular', open_phone_files),
+        pystray.MenuItem('Arquivos do celular (pastas autorizadas)', open_phone_files_dashboard),
         pystray.MenuItem('Abrir Downloads', open_downloads),
         pystray.MenuItem('Mostrar código NEXUS Central', show_entertainment_key),
         pystray.MenuItem('Copiar código NEXUS Central', copy_entertainment_key),
@@ -1186,7 +1195,8 @@ if __name__ == '__main__':
     RECORDER_DASHBOARD = RecorderDashboard(edge.root, capture_pc_image,
                                            phone_frame_snapshot, lambda: phone_frame_snapshot() is not None,
                                            set_phone_profile)
-    PHONE_CONTROL_DASHBOARD = PhoneControlDashboard(edge.root, open_phone_files)
+    PHONE_FILES_DASHBOARD = PhoneFilesDashboard(edge.root)
+    PHONE_CONTROL_DASHBOARD = PhoneControlDashboard(edge.root, open_phone_files_dashboard)
     try:
         edge.run()
     finally:
