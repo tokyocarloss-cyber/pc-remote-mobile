@@ -18,7 +18,7 @@ OUTPUT_DIR = Path.home() / "Videos" / "NEXUS PC Remote"
 def profile(width=1280, height=720, fps=30, quality=75):
     width, height = int(width), int(height)
     fps, quality = int(fps), int(quality)
-    if width < 160 or height < 160 or width > 2560 or height > 1440:
+    if width < 160 or height < 160 or width > 2560 or height > 2560:
         raise ValueError("Invalid recording dimensions")
     if fps not in (5, 10, 15, 24, 30, 60):
         raise ValueError("Unsupported recording FPS")
@@ -168,8 +168,11 @@ class RecordingManager:
             if self._worker and self._worker.is_alive():
                 raise RuntimeError("There is already a recording in progress")
             # Fail before creating a misleading empty file.
-            if _as_image(source()) is None:
+            first = _as_image(source())
+            if first is None:
                 raise RuntimeError("No live frames from the selected device")
+            if kind == "phone" and first.height > first.width and width > height:
+                width, height = height, width
             self._stop = threading.Event()
             self._frames, self._error = 0, ""
             self._path = unique_output(kind, "avi")
@@ -182,11 +185,21 @@ class RecordingManager:
                         jpeg = encode_sample(source(), width, height, quality)
                         if jpeg:
                             writer.write(jpeg)
+                            written = 1
+                            next_at += 1.0 / fps
+                            # If capture is slower than the requested FPS, repeat the
+                            # freshest sample to keep real-time video duration correct.
+                            # These are repeated frames, not additional captured FPS.
+                            while next_at < time.monotonic() and written < fps * 2:
+                                writer.write(jpeg)
+                                written += 1
+                                next_at += 1.0 / fps
                             with self._lock:
-                                self._frames += 1
-                        next_at += 1.0 / fps
-                        # Never build a backlog after a slow capture/encode.
-                        next_at = max(next_at, time.monotonic())
+                                self._frames += written
+                        else:
+                            next_at += 1.0 / fps
+                        if time.monotonic() - next_at > 2:
+                            next_at = time.monotonic()
                         self._stop.wait(max(0.0, next_at - time.monotonic()))
                 except Exception as error:
                     with self._lock:
