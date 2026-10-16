@@ -46,6 +46,16 @@ e validação posteriores.
   orientações e rotações, mudança de perfil, captura em segundo plano,
   gravação longa e uso com Android 14/15.
 
+## Autorização dos novos comandos
+
+No PC use o menu de bandeja **Mostrar código NEXUS Central**. No Android,
+insira esse código na tela `Celular → PC` e/ou no diálogo das opções de
+gravação da tela do PC. O servidor exige `X-Nexus-Central-Key` nas rotas de
+gravação, print remoto, envio de quadros e consulta do perfil. O painel local
+do PC opera diretamente na aplicação e não requer a digitação do código.
+O código trafega por HTTP local sem TLS neste ramo legado; **não** use redes
+não confiáveis nem encaminhamento de portas à Internet.
+
 ## Roteiro de teste
 
 1. Atualize **ambos** os binários 1.6, encerre o companion velho no tray.
